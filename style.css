@@ -320,31 +320,7 @@ main {
   height: 100%;
 }
 
-.compare-frame {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.compare-original { animation: compareOriginal 4s infinite; }
-.compare-modified { animation: compareModified 4s infinite; }
-
-@keyframes compareOriginal {
-  0%, 45% { opacity: 1; }
-  50%, 95% { opacity: 0; }
-  100% { opacity: 1; }
-}
-
-@keyframes compareModified {
-  0%, 45% { opacity: 0; }
-  50%, 95% { opacity: 1; }
-  100% { opacity: 0; }
-}
-
-.image-count-badge,
-.compare-badge {
+.image-count-badge {
   position: absolute;
   right: 10px;
   bottom: 10px;
@@ -354,19 +330,6 @@ main {
   color: var(--text);
   border: 1px solid rgba(255,255,255,0.12);
   font-size: 0.72rem;
-  font-weight: 700;
-}
-
-.compare-label {
-  position: absolute;
-  left: 10px;
-  top: 10px;
-  padding: 3px 8px;
-  border-radius: 999px;
-  background: rgba(13,17,23,0.82);
-  color: var(--text);
-  border: 1px solid rgba(255,255,255,0.12);
-  font-size: 0.7rem;
   font-weight: 700;
 }
 

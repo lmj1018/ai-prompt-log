@@ -678,14 +678,11 @@ function cardHTML(r) {
   let imageSection = `<div class="card-no-image">${aiEmoji(r.ai)}</div>`;
 
   if (r.compareEnabled && (r.originalImage || r.modifiedImage)) {
-    const original = r.originalImage || r.modifiedImage;
-    const modified = r.modifiedImage || r.originalImage;
+    const thumbnail = r.modifiedImage || r.originalImage;
     imageSection = `
       <div class="card-media">
-        <img class="compare-frame compare-original" src="${escHtml(original)}" alt="원본" loading="lazy" />
-        <img class="compare-frame compare-modified" src="${escHtml(modified)}" alt="수정본" loading="lazy" />
-        <span class="compare-label">원본/수정본</span>
-        <span class="compare-badge">2초 비교</span>
+        <img class="card-image" src="${escHtml(thumbnail)}" alt="수정본" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />
+        <div class="card-no-image" style="display:none">${aiEmoji(r.ai)}</div>
       </div>`;
   } else if (images.length > 0) {
     imageSection = `
