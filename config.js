@@ -6,7 +6,7 @@
  */
 window.SITE_CONFIG = {
   // 접근 코드 — URL을 알아도 이 코드 없이는 입장 불가
-  accessCode: 'dlatldkagh1!',
+  accessCode: '0000',
 
   // 기록을 저장할 GitHub 저장소 정보
   repoOwner: 'lmj1018',

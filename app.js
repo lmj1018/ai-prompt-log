@@ -9,7 +9,7 @@
 // ──────────────────────────────────────────────
 const CONFIG = window.SITE_CONFIG || {};
 
-const ACCESS_CODE    = CONFIG.accessCode    || 'dlatldkagh1!'; // 접근 코드 (변경 가능)
+const ACCESS_CODE    = CONFIG.accessCode    || '0000'; // 접근 코드 (변경 가능)
 const REPO_OWNER     = CONFIG.repoOwner    || '';             // GitHub 사용자명
 const REPO_NAME      = CONFIG.repoName     || '';             // 저장소 이름
 const ISSUE_LABEL    = CONFIG.issueLabel   || 'ai-prompt-log'; // Issues 라벨
