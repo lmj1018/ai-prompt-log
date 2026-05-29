@@ -153,10 +153,10 @@ function initAuth() {
   loadRecords();
 }
 
-loginBtn.addEventListener('click', openTokenLoginModal);
+loginBtn.addEventListener('click', () => openTokenLoginModal());
 logoutBtn.addEventListener('click', logout);
 
-function openTokenLoginModal() {
+function openTokenLoginModal(onConnected = null) {
   const old = document.getElementById('token-modal');
   if (old) old.remove();
 
@@ -232,6 +232,9 @@ function openTokenLoginModal() {
 
     div.remove();
     await loadRecords();
+    if (typeof onConnected === 'function') {
+      await onConnected();
+    }
   }
 
   save.addEventListener('click', submitToken);
@@ -1298,6 +1301,20 @@ function setDetailStatus(message, tone = '') {
   detailStatus.className = `detail-status${tone ? ` ${tone}` : ''}`;
 }
 
+function requireGitHubForDetail(actionLabel, afterConnect) {
+  if (accessToken) return true;
+
+  setDetailStatus(
+    `${actionLabel}하려면 이 브라우저에서 GitHub 연결이 필요합니다. PC와 휴대폰의 로그인 정보는 따로 저장됩니다.`,
+    'warn'
+  );
+  openTokenLoginModal(async () => {
+    setDetailStatus('GitHub 연결이 완료됐습니다. 이어서 진행합니다.', 'ok');
+    if (typeof afterConnect === 'function') await afterConnect();
+  });
+  return false;
+}
+
 function showDetail(r) {
   currentDetailRecord = r;
   setDetailStatus('');
@@ -1373,8 +1390,7 @@ async function copyCurrentPrompt() {
 
 function editCurrentRecord() {
   if (!currentDetailRecord) return;
-  if (!accessToken) {
-    alert('수정하려면 GitHub 연결이 필요합니다.');
+  if (!requireGitHubForDetail('수정', editCurrentRecord)) {
     return;
   }
   const record = currentDetailRecord;
@@ -1384,8 +1400,7 @@ function editCurrentRecord() {
 
 async function deleteCurrentRecord() {
   if (!currentDetailRecord) return;
-  if (!accessToken) {
-    alert('삭제하려면 GitHub 연결이 필요합니다.');
+  if (!requireGitHubForDetail('삭제', deleteCurrentRecord)) {
     return;
   }
   if (!confirm('이 기록을 삭제할까요? 삭제 권한이 막혀 있으면 GitHub Issue를 닫아서 앱 목록에서 사라지게 합니다.')) {
