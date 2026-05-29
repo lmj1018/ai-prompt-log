@@ -14,8 +14,6 @@ const REPO_OWNER     = CONFIG.repoOwner    || '';             // GitHub 사용�
 const REPO_NAME      = CONFIG.repoName     || '';             // 저장소 이름
 const ISSUE_LABEL    = CONFIG.issueLabel   || 'ai-prompt-log'; // Issues 라벨
 const DEFAULT_BRANCH = CONFIG.branch       || 'main';         // 이미지 파일 저장 브랜치
-const PUBLIC_TOKEN   = CONFIG.publicToken  || '';             // 공개 저장 토큰 (노출 주의)
-const API_BASE_URL   = (CONFIG.apiBaseUrl || '').replace(/\/+$/, ''); // Cloudflare Worker API
 
 // ──────────────────────────────────────────────
 // 상태
@@ -86,33 +84,6 @@ let compareOriginal = null;
 let compareModified = null;
 let lastPasteTarget = 'normal';
 
-function useWorkerApi() {
-  return !!API_BASE_URL;
-}
-
-function workerUrl(path) {
-  return `${API_BASE_URL}${path}`;
-}
-
-async function workerFetch(path, options = {}) {
-  const headers = {
-    Accept: 'application/json',
-    'X-Access-Code': sessionStorage.getItem('access_code') || ACCESS_CODE,
-    ...(options.headers || {})
-  };
-
-  const res = await fetch(workerUrl(path), { ...options, headers });
-  if (!res.ok) {
-    let message = `API 오류: ${res.status}`;
-    try {
-      const err = await res.json();
-      message = err.message || err.error || message;
-    } catch {}
-    throw new Error(message);
-  }
-  return res;
-}
-
 // ──────────────────────────────────────────────
 // 1. 잠금 화면
 // ──────────────────────────────────────────────
@@ -136,7 +107,6 @@ function tryUnlock() {
   const val = accessInput.value.trim();
   if (val === ACCESS_CODE) {
     sessionStorage.setItem('unlocked', 'true');
-    sessionStorage.setItem('access_code', val);
     lockError.textContent = '';
     showApp();
   } else {
@@ -167,19 +137,6 @@ document.head.appendChild(shakeStyle);
 // 2. GitHub 토큰 연결
 // ──────────────────────────────────────────────
 function initAuth() {
-  if (useWorkerApi()) {
-    enableWorkerMode();
-    loadRecords();
-    return;
-  }
-
-  if (PUBLIC_TOKEN) {
-    accessToken = PUBLIC_TOKEN;
-    fetchUser();
-    loadRecords();
-    return;
-  }
-
   // 저장된 토큰 복원
   const saved = localStorage.getItem('gh_token');
   if (saved) {
@@ -191,16 +148,6 @@ function initAuth() {
 
 loginBtn.addEventListener('click', openTokenLoginModal);
 logoutBtn.addEventListener('click', logout);
-
-function enableWorkerMode() {
-  accessToken = null;
-  loginBtn.classList.add('hidden');
-  userInfo.classList.remove('hidden');
-  userAvatar.classList.add('hidden');
-  userName.textContent = '자동 저장';
-  logoutBtn.classList.add('hidden');
-  addBtn.classList.remove('hidden');
-}
 
 function openTokenLoginModal() {
   const old = document.getElementById('token-modal');
@@ -302,33 +249,17 @@ async function fetchUser() {
     currentUser = await res.json();
     loginBtn.classList.add('hidden');
     userInfo.classList.remove('hidden');
-    userAvatar.classList.remove('hidden');
-    logoutBtn.classList.remove('hidden');
     userAvatar.src = currentUser.avatar_url;
     userName.textContent = currentUser.login;
     addBtn.classList.remove('hidden');
     return true;
   } catch {
-    if (PUBLIC_TOKEN) {
-      accessToken = null;
-      loginBtn.classList.remove('hidden');
-      userInfo.classList.add('hidden');
-      addBtn.classList.add('hidden');
-      emptyMsg.classList.remove('hidden');
-      emptyMsg.querySelector('p').innerHTML = 'config.js의 publicToken을 확인해주세요.';
-    } else {
-      logout();
-    }
+    logout();
     return false;
   }
 }
 
 function logout() {
-  if (PUBLIC_TOKEN) {
-    alert('공개 토큰 모드입니다. 로그아웃하려면 config.js의 publicToken을 비워주세요.');
-    return;
-  }
-
   accessToken = null;
   currentUser = null;
   localStorage.removeItem('gh_token');
@@ -439,18 +370,13 @@ async function loadRecords() {
   gallery.innerHTML = '';
 
   try {
-    let res;
-    if (useWorkerApi()) {
-      res = await workerFetch(`/records?label=${encodeURIComponent(ISSUE_LABEL)}`);
-    } else {
-      const headers = { Accept: 'application/vnd.github+json' };
-      if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+    const headers = { Accept: 'application/vnd.github+json' };
+    if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
 
-      res = await fetch(
-        `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/issues?labels=${ISSUE_LABEL}&state=open&per_page=100`,
-        { headers }
-      );
-    }
+    const res = await fetch(
+      `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/issues?labels=${ISSUE_LABEL}&state=open&per_page=100`,
+      { headers }
+    );
 
     if (res.status === 404) {
       throw new Error('저장소를 찾을 수 없습니다. config.js 설정을 확인해주세요.');
@@ -479,21 +405,8 @@ async function loadRecords() {
 }
 
 async function saveRecord(data) {
-  if (!useWorkerApi() && !accessToken) { alert('GitHub 연결이 필요합니다.'); return false; }
+  if (!accessToken) { alert('GitHub 연결이 필요합니다.'); return false; }
   if (!REPO_OWNER || !REPO_NAME) { alert('config.js 저장소 설정이 필요합니다.'); return false; }
-
-  if (useWorkerApi()) {
-    await workerFetch('/records', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        title: data.title,
-        body: buildIssueBody(data),
-        labels: [ISSUE_LABEL]
-      })
-    });
-    return true;
-  }
 
   const res = await fetch(
     `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/issues`,
@@ -544,7 +457,7 @@ function fileToBase64(file) {
 }
 
 async function uploadImageFile(file) {
-  if (!useWorkerApi() && !accessToken) { throw new Error('GitHub 연결이 필요합니다.'); }
+  if (!accessToken) { throw new Error('GitHub 연결이 필요합니다.'); }
   if (!file.type.startsWith('image/')) { throw new Error('이미지 파일만 업로드할 수 있습니다.'); }
   if (file.size > 10 * 1024 * 1024) { throw new Error('이미지는 10MB 이하만 업로드해주세요.'); }
 
@@ -552,20 +465,6 @@ async function uploadImageFile(file) {
   const path = `uploads/${month}/${safeUploadName(file.name)}`;
   const apiPath = path.split('/').map(encodeURIComponent).join('/');
   const content = await fileToBase64(file);
-
-  if (useWorkerApi()) {
-    const res = await workerFetch('/upload', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        path,
-        content,
-        message: `Upload prompt image: ${file.name}`
-      })
-    });
-    const result = await res.json();
-    return result.download_url;
-  }
 
   const res = await fetch(
     `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${apiPath}`,
