@@ -82,6 +82,10 @@ const copyPromptBtn  = $('copy-prompt-btn');
 const editRecordBtn  = $('edit-record-btn');
 const deleteRecordBtn = $('delete-record-btn');
 const detailStatus   = $('detail-status');
+const imageViewerOverlay = $('image-viewer-overlay');
+const imageViewerClose = $('image-viewer-close');
+const imageViewerImg = $('image-viewer-img');
+const imageViewerCaption = $('image-viewer-caption');
 
 let imageItemSeq = 0;
 let pendingImages = [];
@@ -620,11 +624,26 @@ function renderGallery() {
   gallery.innerHTML = filtered.map(r => cardHTML(r)).join('');
 
   gallery.querySelectorAll('.card').forEach(card => {
-    card.addEventListener('click', () => {
-      const id = parseInt(card.dataset.id);
-      const rec = allRecords.find(r => r.id === id);
-      if (rec) showDetail(rec);
+    const id = parseInt(card.dataset.id);
+    const rec = allRecords.find(r => r.id === id);
+    if (!rec) return;
+
+    card.querySelector('.card-body')?.addEventListener('click', () => showDetail(rec));
+
+    const media = card.querySelector('.card-media');
+    media?.addEventListener('click', e => {
+      e.stopPropagation();
+      const img = media.querySelector('img.card-image');
+      const url = img?.currentSrc || img?.src || '';
+      if (url) {
+        showImageViewer(url, rec.title);
+      } else {
+        showDetail(rec);
+      }
     });
+
+    const noImage = [...card.children].find(el => el.classList.contains('card-no-image'));
+    noImage?.addEventListener('click', () => showDetail(rec));
   });
 }
 
@@ -1279,7 +1298,28 @@ modalSave.addEventListener('click', async () => {
 });
 
 // ──────────────────────────────────────────────
-// 7. 상세 보기 모달
+// 7. 이미지 확대 모달
+// ──────────────────────────────────────────────
+imageViewerClose.addEventListener('click', closeImageViewer);
+imageViewerOverlay.addEventListener('click', e => {
+  if (e.target === imageViewerOverlay) closeImageViewer();
+});
+
+function showImageViewer(url, caption = '') {
+  imageViewerImg.src = url;
+  imageViewerImg.alt = caption ? `${caption} 확대 이미지` : '확대 이미지';
+  imageViewerCaption.textContent = caption || '';
+  imageViewerOverlay.classList.remove('hidden');
+}
+
+function closeImageViewer() {
+  imageViewerOverlay.classList.add('hidden');
+  imageViewerImg.removeAttribute('src');
+  imageViewerCaption.textContent = '';
+}
+
+// ──────────────────────────────────────────────
+// 8. 상세 보기 모달
 // ──────────────────────────────────────────────
 detailClose.addEventListener('click', closeDetail);
 detailOverlay.addEventListener('click', e => { if (e.target === detailOverlay) closeDetail(); });
@@ -1446,10 +1486,11 @@ function detailImageHTML(url, caption) {
 }
 
 // ──────────────────────────────────────────────
-// 8. 키보드 단축키
+// 9. 키보드 단축키
 // ──────────────────────────────────────────────
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
+    closeImageViewer();
     closeDetail();
     closeModal();
   }

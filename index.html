@@ -8,7 +8,7 @@
   <meta name="naverbot" content="noindex, nofollow, noarchive, nosnippet" />
   <meta name="Yeti" content="noindex, nofollow, noarchive, nosnippet" />
   <title>AI Prompt Log</title>
-  <link rel="stylesheet" href="style.css?v=20260529-modified-thumb" />
+  <link rel="stylesheet" href="style.css?v=20260529-image-viewer" />
 </head>
 <body>
 
@@ -163,6 +163,15 @@
     </div>
   </div>
 
+  <!-- ===== 이미지 확대 모달 ===== -->
+  <div id="image-viewer-overlay" class="hidden" role="dialog" aria-modal="true" aria-label="이미지 확대">
+    <div class="image-viewer">
+      <button type="button" id="image-viewer-close" class="btn-icon image-viewer-close" aria-label="닫기">✕</button>
+      <img id="image-viewer-img" src="" alt="확대 이미지" />
+      <div id="image-viewer-caption" class="image-viewer-caption"></div>
+    </div>
+  </div>
+
   <!-- ===== 상세 보기 모달 ===== -->
   <div id="detail-overlay" class="hidden">
     <div class="modal modal-detail">
@@ -204,7 +213,7 @@
     </div>
   </div>
 
-  <script src="config.js?v=20260529-modified-thumb"></script>
-  <script src="app.js?v=20260529-modified-thumb"></script>
+  <script src="config.js?v=20260529-image-viewer"></script>
+  <script src="app.js?v=20260529-image-viewer"></script>
 </body>
 </html>
