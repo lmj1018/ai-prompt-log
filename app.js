@@ -14,6 +14,7 @@ const REPO_OWNER     = CONFIG.repoOwner    || '';             // GitHub 사용�
 const REPO_NAME      = CONFIG.repoName     || '';             // 저장소 이름
 const ISSUE_LABEL    = CONFIG.issueLabel   || 'ai-prompt-log'; // Issues 라벨
 const DEFAULT_BRANCH = CONFIG.branch       || 'main';         // 이미지 파일 저장 브랜치
+const PUBLIC_TOKEN   = CONFIG.publicToken  || '';             // 공개 저장 토큰 (노출 주의)
 
 // ──────────────────────────────────────────────
 // 상태
@@ -137,6 +138,13 @@ document.head.appendChild(shakeStyle);
 // 2. GitHub 토큰 연결
 // ──────────────────────────────────────────────
 function initAuth() {
+  if (PUBLIC_TOKEN) {
+    accessToken = PUBLIC_TOKEN;
+    fetchUser();
+    loadRecords();
+    return;
+  }
+
   // 저장된 토큰 복원
   const saved = localStorage.getItem('gh_token');
   if (saved) {
@@ -254,12 +262,26 @@ async function fetchUser() {
     addBtn.classList.remove('hidden');
     return true;
   } catch {
-    logout();
+    if (PUBLIC_TOKEN) {
+      accessToken = null;
+      loginBtn.classList.remove('hidden');
+      userInfo.classList.add('hidden');
+      addBtn.classList.add('hidden');
+      emptyMsg.classList.remove('hidden');
+      emptyMsg.querySelector('p').innerHTML = 'config.js의 publicToken을 확인해주세요.';
+    } else {
+      logout();
+    }
     return false;
   }
 }
 
 function logout() {
+  if (PUBLIC_TOKEN) {
+    alert('공개 토큰 모드입니다. 로그아웃하려면 config.js의 publicToken을 비워주세요.');
+    return;
+  }
+
   accessToken = null;
   currentUser = null;
   localStorage.removeItem('gh_token');
