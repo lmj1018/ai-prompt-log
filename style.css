@@ -480,9 +480,10 @@ main {
 .modal-body select option { background: var(--bg3); }
 
 .ai-radio-group {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  display: flex;
+  align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .ai-radio {
@@ -497,6 +498,7 @@ main {
   display: flex;
   align-items: center;
   justify-content: center;
+  min-width: 82px;
   min-height: 38px;
   padding: 8px 10px;
   border: 1px solid var(--border);
@@ -645,6 +647,18 @@ main {
   height: 100%;
   object-fit: cover;
 }
+
+.image-status {
+  min-height: 20px;
+  margin-top: -4px;
+  color: var(--text2);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.image-status.ok { color: var(--green); }
+.image-status.warn { color: var(--orange); }
+.image-status.error { color: var(--red); }
 
 #image-preview-wrap { min-height: 0; }
 

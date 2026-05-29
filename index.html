@@ -49,12 +49,9 @@
       <div class="filter-inner">
         <span class="filter-label">AI 필터:</span>
         <button class="filter-btn active" data-ai="all">전체</button>
-        <button class="filter-btn" data-ai="ChatGPT">ChatGPT</button>
-        <button class="filter-btn" data-ai="Gemini">Gemini</button>
-        <button class="filter-btn" data-ai="Claude">Claude</button>
-        <button class="filter-btn" data-ai="Midjourney">Midjourney</button>
-        <button class="filter-btn" data-ai="DALL·E">DALL·E</button>
-        <button class="filter-btn" data-ai="Stable Diffusion">Stable Diffusion</button>
+        <button class="filter-btn" data-ai="지피티">지피티</button>
+        <button class="filter-btn" data-ai="제미나이">제미나이</button>
+        <button class="filter-btn" data-ai="회사">회사</button>
         <button class="filter-btn" data-ai="기타">기타</button>
       </div>
     </div>
@@ -80,14 +77,9 @@
       <div class="modal-body">
         <label>AI 종류 <span class="required">*</span></label>
         <div id="ai-radio-group" class="ai-radio-group">
-          <label class="ai-radio"><input type="radio" name="ai-choice" value="ChatGPT" /><span>ChatGPT</span></label>
-          <label class="ai-radio"><input type="radio" name="ai-choice" value="Gemini" /><span>Gemini</span></label>
-          <label class="ai-radio"><input type="radio" name="ai-choice" value="Claude" /><span>Claude</span></label>
-          <label class="ai-radio"><input type="radio" name="ai-choice" value="Midjourney" /><span>Midjourney</span></label>
-          <label class="ai-radio"><input type="radio" name="ai-choice" value="DALL·E" /><span>DALL·E</span></label>
-          <label class="ai-radio"><input type="radio" name="ai-choice" value="Stable Diffusion" /><span>Stable Diffusion</span></label>
-          <label class="ai-radio"><input type="radio" name="ai-choice" value="Sora" /><span>Sora</span></label>
-          <label class="ai-radio"><input type="radio" name="ai-choice" value="Runway" /><span>Runway</span></label>
+          <label class="ai-radio"><input type="radio" name="ai-choice" value="지피티" /><span>지피티</span></label>
+          <label class="ai-radio"><input type="radio" name="ai-choice" value="제미나이" /><span>제미나이</span></label>
+          <label class="ai-radio"><input type="radio" name="ai-choice" value="회사" /><span>회사</span></label>
           <label class="ai-radio"><input type="radio" name="ai-choice" value="기타" /><span>기타</span></label>
         </div>
         <input type="text" id="ai-custom" placeholder="직접 입력" class="hidden" />
@@ -154,6 +146,7 @@
             </div>
           </div>
         </div>
+        <p id="image-status" class="image-status"></p>
 
         <label>메모 (선택)</label>
         <textarea id="record-memo" placeholder="추가 메모나 평가를 적어주세요" rows="3"></textarea>

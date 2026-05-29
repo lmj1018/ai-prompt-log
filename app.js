@@ -71,6 +71,7 @@ const pasteOriginalBtn = $('paste-original-btn');
 const pasteModifiedBtn = $('paste-modified-btn');
 const originalPreview = $('original-preview');
 const modifiedPreview = $('modified-preview');
+const imageStatus   = $('image-status');
 const recordMemo     = $('record-memo');
 
 const detailOverlay  = $('detail-overlay');
@@ -80,6 +81,7 @@ let imageItemSeq = 0;
 let pendingImages = [];
 let compareOriginal = null;
 let compareModified = null;
+let lastPasteTarget = 'normal';
 
 // ──────────────────────────────────────────────
 // 1. 잠금 화면
@@ -498,7 +500,7 @@ function renderGallery() {
 
   const filtered = currentFilter === 'all'
     ? allRecords
-    : allRecords.filter(r => r.ai === currentFilter);
+    : allRecords.filter(r => matchesFilter(r.ai, currentFilter));
 
   if (filtered.length === 0) {
     emptyMsg.classList.remove('hidden');
@@ -522,10 +524,23 @@ function renderGallery() {
   });
 }
 
+function matchesFilter(ai, filter) {
+  const aliases = {
+    '지피티': ['지피티', 'ChatGPT'],
+    '제미나이': ['제미나이', 'Gemini'],
+    '회사': ['회사'],
+    '기타': ['기타']
+  };
+  return (aliases[filter] || [filter]).includes(ai);
+}
+
 function aiBadgeClass(ai) {
   const map = {
     'ChatGPT': 'badge-ChatGPT',
+    '지피티': 'badge-ChatGPT',
     'Gemini': 'badge-Gemini',
+    '제미나이': 'badge-Gemini',
+    '회사': 'badge-Claude',
     'Claude': 'badge-Claude',
     'Midjourney': 'badge-Midjourney',
     'DALL·E': 'badge-DALLE',
@@ -537,6 +552,7 @@ function aiBadgeClass(ai) {
 function aiEmoji(ai) {
   const map = {
     'ChatGPT': '🟢', 'Gemini': '🔵', 'Claude': '🟠',
+    '지피티': '🟢', '제미나이': '🔵', '회사': '🏢',
     'Midjourney': '🟣', 'DALL·E': '🟡', 'Stable Diffusion': '🔴',
     'Sora': '🎬', 'Runway': '🎥'
   };
@@ -642,6 +658,7 @@ function closeModal() {
   updateImageMode();
   renderImageQueue();
   renderCompareSlots();
+  setImageStatus('');
   recordMemo.value = '';
 }
 
@@ -673,41 +690,62 @@ function updateImageMode() {
   if (compareToggle.checked) {
     normalImagePanel.classList.add('hidden');
     compareImagePanel.classList.remove('hidden');
+    lastPasteTarget = 'original';
   } else {
     normalImagePanel.classList.remove('hidden');
     compareImagePanel.classList.add('hidden');
+    lastPasteTarget = 'normal';
   }
+  setImageStatus('');
 }
 
 compareToggle.addEventListener('change', updateImageMode);
 
-function validImageUrl(raw) {
+function setImageStatus(message, tone = '') {
+  imageStatus.textContent = message || '';
+  imageStatus.className = `image-status${tone ? ` ${tone}` : ''}`;
+}
+
+function normalizeImageUrl(raw) {
   const value = raw.trim();
-  if (!value) return '';
+  if (!value) return null;
   try {
     const url = new URL(value);
     if (!/^https?:$/.test(url.protocol)) throw new Error('invalid protocol');
     return url.href;
   } catch {
-    alert('이미지 주소는 http 또는 https URL로 입력해주세요.');
-    return '';
+    return null;
   }
+}
+
+function validImageUrl(raw) {
+  const url = normalizeImageUrl(raw);
+  if (!url && raw.trim()) {
+    alert('이미지 주소는 http 또는 https URL로 입력해주세요.');
+  }
+  return url || '';
+}
+
+function urlImageItem(url, name = 'URL 이미지') {
+  return { id: ++imageItemSeq, type: 'url', url, preview: url, name };
 }
 
 function addUrlImage() {
   const url = validImageUrl(recordImage.value);
   if (!url) return;
-  pendingImages.push({ id: ++imageItemSeq, type: 'url', url, preview: url, name: 'URL 이미지' });
+  pendingImages.push(urlImageItem(url));
   recordImage.value = '';
   renderImageQueue();
+  setImageStatus('이미지 URL을 추가했습니다.', 'ok');
 }
 
 function setCompareUrl(slot) {
   const input = slot === 'original' ? originalImageUrl : modifiedImageUrl;
   const url = validImageUrl(input.value);
   if (!url) return;
-  setCompareImage(slot, { id: ++imageItemSeq, type: 'url', url, preview: url, name: 'URL 이미지' });
+  setCompareImage(slot, urlImageItem(url));
   input.value = '';
+  setImageStatus(`${slot === 'original' ? '원본' : '수정본'} 이미지 URL을 적용했습니다.`, 'ok');
 }
 
 async function fileToDataUrl(file) {
@@ -720,7 +758,9 @@ async function fileToDataUrl(file) {
 }
 
 function assertImageFile(file) {
-  if (!file.type.startsWith('image/')) {
+  const hasImageType = file.type.startsWith('image/');
+  const hasImageExt = /\.(png|jpe?g|webp|gif|bmp)$/i.test(file.name || '');
+  if (!hasImageType && !hasImageExt) {
     throw new Error('이미지 파일만 선택해주세요.');
   }
 }
@@ -744,8 +784,9 @@ async function addFilesToQueue(fileList) {
       pendingImages.push(await imageItemFromFile(file));
     }
     renderImageQueue();
+    setImageStatus(`이미지 ${files.length}개를 추가했습니다.`, 'ok');
   } catch (err) {
-    alert(err.message);
+    setImageStatus(err.message, 'error');
   } finally {
     recordImageFile.value = '';
   }
@@ -756,8 +797,9 @@ async function setCompareFile(slot, fileList) {
   if (!file) return;
   try {
     setCompareImage(slot, await imageItemFromFile(file));
+    setImageStatus(`${slot === 'original' ? '원본' : '수정본'} 이미지를 추가했습니다.`, 'ok');
   } catch (err) {
-    alert(err.message);
+    setImageStatus(err.message, 'error');
   } finally {
     if (slot === 'original') originalImageFile.value = '';
     if (slot === 'modified') modifiedImageFile.value = '';
@@ -814,43 +856,131 @@ function renderCompareSlot(slot, item, target, emptyText) {
   });
 }
 
+function imageUrlsFromText(text) {
+  return String(text || '')
+    .split(/\s+/)
+    .map(value => normalizeImageUrl(value))
+    .filter(Boolean);
+}
+
+function imageUrlsFromHTML(html) {
+  if (!html) return [];
+  try {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    return [...doc.querySelectorAll('img[src]')]
+      .map(img => normalizeImageUrl(img.getAttribute('src') || ''))
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+async function clipboardFileToItem(blob, index = 1) {
+  const type = blob.type || 'image/png';
+  const ext = type.split('/')[1]?.replace('jpeg', 'jpg') || 'png';
+  const file = new File([blob], `clipboard-${Date.now()}-${index}.${ext}`, { type });
+  return imageItemFromFile(file, file.name);
+}
+
 async function readClipboardImageItems() {
-  if (!navigator.clipboard?.read) {
-    throw new Error('이 브라우저에서는 클립보드 이미지 읽기를 지원하지 않습니다. HTTPS 주소에서 다시 시도해주세요.');
+  const found = [];
+
+  if (navigator.clipboard?.read) {
+    try {
+      const clipboardItems = await navigator.clipboard.read();
+      for (const item of clipboardItems) {
+        const imageType = item.types.find(type => type.startsWith('image/'));
+        if (imageType) {
+          const blob = await item.getType(imageType);
+          found.push(await clipboardFileToItem(blob, found.length + 1));
+          continue;
+        }
+
+        if (item.types.includes('text/html')) {
+          const html = await (await item.getType('text/html')).text();
+          found.push(...imageUrlsFromHTML(html).map(url => urlImageItem(url, '클립보드 이미지 URL')));
+        }
+
+        if (item.types.includes('text/plain')) {
+          const text = await (await item.getType('text/plain')).text();
+          found.push(...imageUrlsFromText(text).map(url => urlImageItem(url, '클립보드 URL')));
+        }
+      }
+    } catch {
+      // Some browsers block direct clipboard reads; Ctrl+V paste fallback below still works.
+    }
   }
 
-  const clipboardItems = await navigator.clipboard.read();
-  const files = [];
-  for (const item of clipboardItems) {
-    const imageType = item.types.find(type => type.startsWith('image/'));
-    if (!imageType) continue;
-    const blob = await item.getType(imageType);
-    const ext = imageType.split('/')[1]?.replace('jpeg', 'jpg') || 'png';
-    files.push(new File([blob], `clipboard-${Date.now()}-${files.length + 1}.${ext}`, { type: imageType }));
+  if (found.length === 0 && navigator.clipboard?.readText) {
+    try {
+      const text = await navigator.clipboard.readText();
+      found.push(...imageUrlsFromText(text).map(url => urlImageItem(url, '클립보드 URL')));
+    } catch {
+      // Ignore; the caller will show the paste fallback message.
+    }
   }
 
-  if (files.length === 0) {
-    throw new Error('클립보드에 이미지가 없습니다.');
+  if (found.length === 0) {
+    throw new Error('클립보드에서 이미지를 찾지 못했습니다.');
   }
 
-  return Promise.all(files.map(file => imageItemFromFile(file, file.name)));
+  return found;
+}
+
+async function itemsFromPasteEvent(data) {
+  const found = [];
+  const files = [...(data.files || [])].filter(file =>
+    file.type.startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp)$/i.test(file.name || '')
+  );
+
+  for (const file of files) {
+    found.push(await imageItemFromFile(file));
+  }
+
+  if (found.length > 0) return found;
+
+  found.push(...imageUrlsFromHTML(data.getData('text/html')).map(url => urlImageItem(url, '붙여넣은 이미지 URL')));
+  found.push(...imageUrlsFromText(data.getData('text/plain')).map(url => urlImageItem(url, '붙여넣은 URL')));
+  return found;
+}
+
+function applyClipboardItems(items, target = 'normal') {
+  if (target === 'original') {
+    setCompareImage('original', items[0]);
+  } else if (target === 'modified') {
+    setCompareImage('modified', items[0]);
+  } else {
+    pendingImages.push(...items);
+    renderImageQueue();
+  }
 }
 
 async function pasteClipboardImages(target = 'normal') {
+  lastPasteTarget = target;
+  setImageStatus('클립보드를 확인하는 중입니다...', '');
+
   try {
     const items = await readClipboardImageItems();
-    if (target === 'original') {
-      setCompareImage('original', items[0]);
-    } else if (target === 'modified') {
-      setCompareImage('modified', items[0]);
-    } else {
-      pendingImages.push(...items);
-      renderImageQueue();
-    }
+    applyClipboardItems(items, target);
+    setImageStatus(`클립보드에서 이미지 ${items.length}개를 추가했습니다.`, 'ok');
   } catch (err) {
-    alert(err.message);
+    setImageStatus(`${err.message} 버튼으로 안 들어오면 지금 Ctrl+V를 눌러주세요.`, 'warn');
   }
 }
+
+document.addEventListener('paste', async e => {
+  if (modalOverlay.classList.contains('hidden')) return;
+
+  try {
+    const items = await itemsFromPasteEvent(e.clipboardData);
+    if (items.length === 0) return;
+    e.preventDefault();
+    applyClipboardItems(items, lastPasteTarget);
+    setImageStatus(`붙여넣기로 이미지 ${items.length}개를 추가했습니다.`, 'ok');
+  } catch (err) {
+    setImageStatus(err.message, 'error');
+  }
+});
 
 async function resolveImageItem(item) {
   if (!item) return '';
@@ -868,11 +998,16 @@ async function resolveImageQueue() {
 }
 
 addImageUrlBtn.addEventListener('click', addUrlImage);
+recordImage.addEventListener('focus', () => { lastPasteTarget = 'normal'; });
 recordImage.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addUrlImage(); } });
 recordImageFile.addEventListener('change', () => addFilesToQueue(recordImageFile.files));
 pasteImageBtn.addEventListener('click', () => pasteClipboardImages('normal'));
 addOriginalUrlBtn.addEventListener('click', () => setCompareUrl('original'));
 addModifiedUrlBtn.addEventListener('click', () => setCompareUrl('modified'));
+originalImageUrl.addEventListener('focus', () => { lastPasteTarget = 'original'; });
+modifiedImageUrl.addEventListener('focus', () => { lastPasteTarget = 'modified'; });
+originalPreview.addEventListener('click', () => { lastPasteTarget = 'original'; });
+modifiedPreview.addEventListener('click', () => { lastPasteTarget = 'modified'; });
 originalImageUrl.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); setCompareUrl('original'); } });
 modifiedImageUrl.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); setCompareUrl('modified'); } });
 originalImageFile.addEventListener('change', () => setCompareFile('original', originalImageFile.files));
