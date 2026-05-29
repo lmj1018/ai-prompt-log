@@ -9,11 +9,12 @@
 // ──────────────────────────────────────────────
 const CONFIG = window.SITE_CONFIG || {};
 
-const ACCESS_CODE    = CONFIG.accessCode    || 'ailog2024';   // 접근 코드 (변경 가능)
+const ACCESS_CODE    = CONFIG.accessCode    || 'dlatldkagh1!'; // 접근 코드 (변경 가능)
 const GITHUB_CLIENT_ID = CONFIG.clientId   || '';             // GitHub OAuth App Client ID
 const REPO_OWNER     = CONFIG.repoOwner    || '';             // GitHub 사용자명
 const REPO_NAME      = CONFIG.repoName     || '';             // 저장소 이름
 const ISSUE_LABEL    = CONFIG.issueLabel   || 'ai-prompt-log'; // Issues 라벨
+const DEFAULT_BRANCH = CONFIG.branch       || 'main';         // 이미지 파일 저장 브랜치
 
 // ──────────────────────────────────────────────
 // 상태
@@ -54,6 +55,7 @@ const aiCustom       = $('ai-custom');
 const recordTitle    = $('record-title');
 const recordPrompt   = $('record-prompt');
 const recordImage    = $('record-image');
+const recordImageFile = $('record-image-file');
 const imagePreview   = $('image-preview');
 const recordMemo     = $('record-memo');
 
@@ -395,6 +397,67 @@ async function saveRecord(data) {
   return true;
 }
 
+function safeUploadName(name) {
+  const dot = name.lastIndexOf('.');
+  const rawBase = dot > -1 ? name.slice(0, dot) : name;
+  const rawExt = dot > -1 ? name.slice(dot + 1).toLowerCase() : 'png';
+  const base = rawBase
+    .normalize('NFKD')
+    .replace(/[^\w.-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 60) || 'image';
+  const ext = rawExt.replace(/[^a-z0-9]/g, '').slice(0, 10) || 'png';
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  return `${stamp}-${base}.${ext}`;
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(',')[1]);
+    reader.onerror = () => reject(new Error('이미지 파일을 읽지 못했습니다.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function uploadImageFile(file) {
+  if (!accessToken) { throw new Error('GitHub 로그인이 필요합니다.'); }
+  if (!file.type.startsWith('image/')) { throw new Error('이미지 파일만 업로드할 수 있습니다.'); }
+  if (file.size > 10 * 1024 * 1024) { throw new Error('이미지는 10MB 이하만 업로드해주세요.'); }
+
+  const month = new Date().toISOString().slice(0, 7);
+  const path = `uploads/${month}/${safeUploadName(file.name)}`;
+  const apiPath = path.split('/').map(encodeURIComponent).join('/');
+  const content = await fileToBase64(file);
+
+  const res = await fetch(
+    `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${apiPath}`,
+    {
+      method: 'PUT',
+      headers: {
+        Authorization: `token ${accessToken}`,
+        Accept: 'application/vnd.github+json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        message: `Upload prompt image: ${file.name}`,
+        content,
+        branch: DEFAULT_BRANCH
+      })
+    }
+  );
+
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.message || '이미지 업로드 실패');
+  }
+
+  const result = await res.json();
+  return result.content?.download_url
+    || `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/${DEFAULT_BRANCH}/${apiPath}`;
+}
+
 // ──────────────────────────────────────────────
 // 4. 갤러리 렌더링
 // ──────────────────────────────────────────────
@@ -512,6 +575,7 @@ function closeModal() {
   recordTitle.value = '';
   recordPrompt.value = '';
   recordImage.value = '';
+  recordImageFile.value = '';
   imagePreview.src = '';
   imagePreview.classList.add('hidden');
   recordMemo.value = '';
@@ -530,6 +594,7 @@ aiSelect.addEventListener('change', () => {
 let previewTimer;
 recordImage.addEventListener('input', () => {
   clearTimeout(previewTimer);
+  if (recordImage.value.trim()) recordImageFile.value = '';
   previewTimer = setTimeout(() => {
     const url = recordImage.value.trim();
     if (url) {
@@ -544,6 +609,24 @@ recordImage.addEventListener('input', () => {
   }, 600);
 });
 
+recordImageFile.addEventListener('change', () => {
+  const file = recordImageFile.files?.[0];
+  if (!file) return;
+  if (!file.type.startsWith('image/')) {
+    alert('이미지 파일만 선택해주세요.');
+    recordImageFile.value = '';
+    return;
+  }
+
+  recordImage.value = '';
+  const reader = new FileReader();
+  reader.onload = () => {
+    imagePreview.src = reader.result;
+    imagePreview.classList.remove('hidden');
+  };
+  reader.readAsDataURL(file);
+});
+
 modalSave.addEventListener('click', async () => {
   const ai = aiSelect.value === '기타'
     ? (aiCustom.value.trim() || '기타')
@@ -551,7 +634,8 @@ modalSave.addEventListener('click', async () => {
 
   const title  = recordTitle.value.trim();
   const prompt = recordPrompt.value.trim();
-  const image  = recordImage.value.trim();
+  let image    = recordImage.value.trim();
+  const imageFile = recordImageFile.files?.[0];
   const memo   = recordMemo.value.trim();
 
   if (!ai)     { alert('AI 종류를 선택해주세요.'); return; }
@@ -562,6 +646,11 @@ modalSave.addEventListener('click', async () => {
   modalSave.textContent = '저장 중...';
 
   try {
+    if (imageFile) {
+      modalSave.textContent = '이미지 업로드 중...';
+      image = await uploadImageFile(imageFile);
+      modalSave.textContent = '기록 저장 중...';
+    }
     await saveRecord({ ai, title, prompt, image, memo });
     closeModal();
     await loadRecords();

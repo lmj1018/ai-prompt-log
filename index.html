@@ -101,8 +101,9 @@
         <label>사용한 프롬프트 <span class="required">*</span></label>
         <textarea id="record-prompt" placeholder="AI에게 입력한 프롬프트를 붙여넣으세요" rows="5"></textarea>
 
-        <label>결과물 이미지 URL</label>
-        <input type="url" id="record-image" placeholder="https://... (이미지 주소를 붙여넣으세요)" />
+        <label>결과물 이미지</label>
+        <input type="url" id="record-image" placeholder="https://... (이미지 주소)" />
+        <input type="file" id="record-image-file" accept="image/*" />
         <div id="image-preview-wrap">
           <img id="image-preview" src="" alt="미리보기" class="hidden" />
         </div>
