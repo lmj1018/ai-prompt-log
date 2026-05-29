@@ -79,21 +79,18 @@
       </div>
       <div class="modal-body">
         <label>AI 종류 <span class="required">*</span></label>
-        <div class="ai-select-group">
-          <select id="ai-select">
-            <option value="">선택하세요</option>
-            <option>ChatGPT</option>
-            <option>Gemini</option>
-            <option>Claude</option>
-            <option>Midjourney</option>
-            <option>DALL·E</option>
-            <option>Stable Diffusion</option>
-            <option>Sora</option>
-            <option>Runway</option>
-            <option>기타</option>
-          </select>
-          <input type="text" id="ai-custom" placeholder="직접 입력 (기타 선택 시)" class="hidden" />
+        <div id="ai-radio-group" class="ai-radio-group">
+          <label class="ai-radio"><input type="radio" name="ai-choice" value="ChatGPT" /><span>ChatGPT</span></label>
+          <label class="ai-radio"><input type="radio" name="ai-choice" value="Gemini" /><span>Gemini</span></label>
+          <label class="ai-radio"><input type="radio" name="ai-choice" value="Claude" /><span>Claude</span></label>
+          <label class="ai-radio"><input type="radio" name="ai-choice" value="Midjourney" /><span>Midjourney</span></label>
+          <label class="ai-radio"><input type="radio" name="ai-choice" value="DALL·E" /><span>DALL·E</span></label>
+          <label class="ai-radio"><input type="radio" name="ai-choice" value="Stable Diffusion" /><span>Stable Diffusion</span></label>
+          <label class="ai-radio"><input type="radio" name="ai-choice" value="Sora" /><span>Sora</span></label>
+          <label class="ai-radio"><input type="radio" name="ai-choice" value="Runway" /><span>Runway</span></label>
+          <label class="ai-radio"><input type="radio" name="ai-choice" value="기타" /><span>기타</span></label>
         </div>
+        <input type="text" id="ai-custom" placeholder="직접 입력" class="hidden" />
 
         <label>제목 <span class="required">*</span></label>
         <input type="text" id="record-title" placeholder="이 기록의 제목을 입력하세요" />
@@ -101,11 +98,61 @@
         <label>사용한 프롬프트 <span class="required">*</span></label>
         <textarea id="record-prompt" placeholder="AI에게 입력한 프롬프트를 붙여넣으세요" rows="5"></textarea>
 
-        <label>결과물 이미지</label>
-        <input type="url" id="record-image" placeholder="https://... (이미지 주소)" />
-        <input type="file" id="record-image-file" accept="image/*" />
-        <div id="image-preview-wrap">
-          <img id="image-preview" src="" alt="미리보기" class="hidden" />
+        <label>이미지</label>
+        <label class="compare-toggle">
+          <input type="checkbox" id="compare-toggle" />
+          <span>원본 / 수정본 비교</span>
+        </label>
+
+        <div id="normal-image-panel" class="image-panel">
+          <div class="image-url-row">
+            <input type="url" id="record-image" placeholder="https://... (이미지 주소)" />
+            <button type="button" id="add-image-url-btn" class="btn-small">URL 추가</button>
+          </div>
+          <div class="image-actions">
+            <label class="file-button">
+              파일 선택
+              <input type="file" id="record-image-file" accept="image/*" multiple />
+            </label>
+            <button type="button" id="paste-image-btn" class="btn-ghost">클립보드 이미지 붙여넣기</button>
+          </div>
+          <div id="image-preview-wrap" class="image-preview-grid"></div>
+        </div>
+
+        <div id="compare-image-panel" class="image-panel hidden">
+          <div class="compare-input-grid">
+            <div class="compare-input-box">
+              <div class="compare-input-title">원본</div>
+              <div class="image-url-row">
+                <input type="url" id="original-image-url" placeholder="원본 이미지 주소" />
+                <button type="button" id="add-original-url-btn" class="btn-small">적용</button>
+              </div>
+              <div class="image-actions">
+                <label class="file-button">
+                  파일 선택
+                  <input type="file" id="original-image-file" accept="image/*" />
+                </label>
+                <button type="button" id="paste-original-btn" class="btn-ghost">클립보드</button>
+              </div>
+              <div id="original-preview" class="compare-preview empty">원본 없음</div>
+            </div>
+
+            <div class="compare-input-box">
+              <div class="compare-input-title">수정본</div>
+              <div class="image-url-row">
+                <input type="url" id="modified-image-url" placeholder="프롬프트 후 이미지 주소" />
+                <button type="button" id="add-modified-url-btn" class="btn-small">적용</button>
+              </div>
+              <div class="image-actions">
+                <label class="file-button">
+                  파일 선택
+                  <input type="file" id="modified-image-file" accept="image/*" />
+                </label>
+                <button type="button" id="paste-modified-btn" class="btn-ghost">클립보드</button>
+              </div>
+              <div id="modified-preview" class="compare-preview empty">수정본 없음</div>
+            </div>
+          </div>
         </div>
 
         <label>메모 (선택)</label>
@@ -127,7 +174,7 @@
       </div>
       <div class="modal-body">
         <div class="detail-ai-badge" id="detail-ai-badge"></div>
-        <img id="detail-image" src="" alt="결과물" class="detail-img hidden" />
+        <div id="detail-images" class="detail-images hidden"></div>
         <div class="detail-section">
           <div class="detail-label">프롬프트</div>
           <pre id="detail-prompt" class="detail-pre"></pre>

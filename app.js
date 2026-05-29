@@ -49,17 +49,37 @@ const modalOverlay   = $('modal-overlay');
 const modalClose     = $('modal-close');
 const modalCancel    = $('modal-cancel');
 const modalSave      = $('modal-save');
-const aiSelect       = $('ai-select');
+const aiRadios       = document.querySelectorAll('input[name="ai-choice"]');
 const aiCustom       = $('ai-custom');
 const recordTitle    = $('record-title');
 const recordPrompt   = $('record-prompt');
 const recordImage    = $('record-image');
 const recordImageFile = $('record-image-file');
-const imagePreview   = $('image-preview');
+const addImageUrlBtn = $('add-image-url-btn');
+const pasteImageBtn  = $('paste-image-btn');
+const imagePreviewWrap = $('image-preview-wrap');
+const compareToggle  = $('compare-toggle');
+const normalImagePanel = $('normal-image-panel');
+const compareImagePanel = $('compare-image-panel');
+const originalImageUrl = $('original-image-url');
+const modifiedImageUrl = $('modified-image-url');
+const addOriginalUrlBtn = $('add-original-url-btn');
+const addModifiedUrlBtn = $('add-modified-url-btn');
+const originalImageFile = $('original-image-file');
+const modifiedImageFile = $('modified-image-file');
+const pasteOriginalBtn = $('paste-original-btn');
+const pasteModifiedBtn = $('paste-modified-btn');
+const originalPreview = $('original-preview');
+const modifiedPreview = $('modified-preview');
 const recordMemo     = $('record-memo');
 
 const detailOverlay  = $('detail-overlay');
 const detailClose    = $('detail-close');
+
+let imageItemSeq = 0;
+let pendingImages = [];
+let compareOriginal = null;
+let compareModified = null;
 
 // ──────────────────────────────────────────────
 // 1. 잠금 화면
@@ -252,10 +272,23 @@ function logout() {
 
 // Issue body 포맷 (파싱 가능하도록 구조화)
 function buildIssueBody(data) {
+  const images = Array.isArray(data.images) ? data.images.filter(Boolean) : [];
+  const compare = {
+    enabled: !!data.compareEnabled,
+    original: data.originalImage || '',
+    modified: data.modifiedImage || ''
+  };
+  const primaryImage = compare.enabled
+    ? (compare.modified || compare.original)
+    : (images[0] || data.image || '');
+  const payload = JSON.stringify({ images, compare });
+  const imageSection = buildImageSection(images, compare);
+
   return [
     `<!-- AI_PROMPT_LOG_DATA`,
     `ai: ${data.ai}`,
-    `image: ${data.image || ''}`,
+    `image: ${primaryImage}`,
+    `json: ${payload}`,
     `-->`,
     ``,
     `## 프롬프트`,
@@ -263,21 +296,59 @@ function buildIssueBody(data) {
     data.prompt,
     `\`\`\``,
     ``,
-    data.image ? `## 결과 이미지\n![결과물](${data.image})` : '',
+    imageSection,
     ``,
     data.memo ? `## 메모\n${data.memo}` : ''
   ].filter(l => l !== undefined).join('\n');
 }
 
+function buildImageSection(images, compare) {
+  if (compare.enabled && (compare.original || compare.modified)) {
+    return [
+      `## 원본 / 수정본`,
+      `| 원본 | 수정본 |`,
+      `| --- | --- |`,
+      `| ${compare.original ? `![원본](${compare.original})` : ''} | ${compare.modified ? `![수정본](${compare.modified})` : ''} |`
+    ].join('\n');
+  }
+
+  if (images.length === 0) return '';
+
+  return [
+    `## 결과 이미지`,
+    ...images.map((url, idx) => `![결과물 ${idx + 1}](${url})`)
+  ].join('\n');
+}
+
 function parseIssueBody(body) {
   const aiMatch    = body.match(/^ai:\s*(.+)$/m);
   const imageMatch = body.match(/^image:\s*(.*)$/m);
+  const jsonMatch  = body.match(/^json:\s*(\{.*\})$/m);
   const promptMatch = body.match(/```\n([\s\S]*?)\n```/);
   const memoMatch  = body.match(/## 메모\n([\s\S]*?)(?:\n##|$)/);
+  const oldImage = imageMatch ? imageMatch[1].trim() : '';
+  let payload = {};
+
+  if (jsonMatch) {
+    try {
+      payload = JSON.parse(jsonMatch[1]);
+    } catch {
+      payload = {};
+    }
+  }
+
+  const images = Array.isArray(payload.images)
+    ? payload.images.filter(Boolean)
+    : (oldImage ? [oldImage] : []);
+  const compare = payload.compare || {};
 
   return {
     ai:     aiMatch    ? aiMatch[1].trim()    : '기타',
-    image:  imageMatch ? imageMatch[1].trim() : '',
+    image:  oldImage || images[0] || '',
+    images,
+    compareEnabled: !!compare.enabled,
+    originalImage: compare.original || '',
+    modifiedImage: compare.modified || '',
     prompt: promptMatch ? promptMatch[1].trim() : body,
     memo:   memoMatch  ? memoMatch[1].trim()  : ''
   };
@@ -477,10 +548,33 @@ function formatDate(iso) {
   return `${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')}`;
 }
 
+function recordImages(r) {
+  if (Array.isArray(r.images) && r.images.length > 0) return r.images;
+  return r.image ? [r.image] : [];
+}
+
 function cardHTML(r) {
-  const imageSection = r.image
-    ? `<img class="card-image" src="${escHtml(r.image)}" alt="결과물" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" /><div class="card-no-image" style="display:none">${aiEmoji(r.ai)}</div>`
-    : `<div class="card-no-image">${aiEmoji(r.ai)}</div>`;
+  const images = recordImages(r);
+  let imageSection = `<div class="card-no-image">${aiEmoji(r.ai)}</div>`;
+
+  if (r.compareEnabled && (r.originalImage || r.modifiedImage)) {
+    const original = r.originalImage || r.modifiedImage;
+    const modified = r.modifiedImage || r.originalImage;
+    imageSection = `
+      <div class="card-media">
+        <img class="compare-frame compare-original" src="${escHtml(original)}" alt="원본" loading="lazy" />
+        <img class="compare-frame compare-modified" src="${escHtml(modified)}" alt="수정본" loading="lazy" />
+        <span class="compare-label">원본/수정본</span>
+        <span class="compare-badge">2초 비교</span>
+      </div>`;
+  } else if (images.length > 0) {
+    imageSection = `
+      <div class="card-media">
+        <img class="card-image" src="${escHtml(images[0])}" alt="결과물" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />
+        <div class="card-no-image" style="display:none">${aiEmoji(r.ai)}</div>
+        ${images.length > 1 ? `<span class="image-count-badge">+${images.length - 1}</span>` : ''}
+      </div>`;
+  }
 
   return `
     <div class="card" data-id="${r.id}">
@@ -530,89 +624,314 @@ function openModal() {
 function closeModal() {
   modalOverlay.classList.add('hidden');
   // 폼 초기화
-  aiSelect.value = '';
+  resetAISelection();
   aiCustom.value = '';
   aiCustom.classList.add('hidden');
   recordTitle.value = '';
   recordPrompt.value = '';
   recordImage.value = '';
   recordImageFile.value = '';
-  imagePreview.src = '';
-  imagePreview.classList.add('hidden');
+  originalImageUrl.value = '';
+  modifiedImageUrl.value = '';
+  originalImageFile.value = '';
+  modifiedImageFile.value = '';
+  compareToggle.checked = false;
+  pendingImages = [];
+  compareOriginal = null;
+  compareModified = null;
+  updateImageMode();
+  renderImageQueue();
+  renderCompareSlots();
   recordMemo.value = '';
 }
 
-aiSelect.addEventListener('change', () => {
-  if (aiSelect.value === '기타') {
+function resetAISelection() {
+  aiRadios.forEach(radio => { radio.checked = false; });
+}
+
+function selectedAI() {
+  const checked = [...aiRadios].find(radio => radio.checked);
+  if (!checked) return '';
+  return checked.value === '기타'
+    ? (aiCustom.value.trim() || '기타')
+    : checked.value;
+}
+
+function updateCustomAIField() {
+  const checked = [...aiRadios].find(radio => radio.checked);
+  if (checked?.value === '기타') {
     aiCustom.classList.remove('hidden');
     aiCustom.focus();
   } else {
     aiCustom.classList.add('hidden');
   }
-});
+}
 
-// 이미지 URL 미리보기
-let previewTimer;
-recordImage.addEventListener('input', () => {
-  clearTimeout(previewTimer);
-  if (recordImage.value.trim()) recordImageFile.value = '';
-  previewTimer = setTimeout(() => {
-    const url = recordImage.value.trim();
-    if (url) {
-      imagePreview.src = url;
-      imagePreview.classList.remove('hidden');
-      imagePreview.onerror = () => {
-        imagePreview.classList.add('hidden');
-      };
-    } else {
-      imagePreview.classList.add('hidden');
-    }
-  }, 600);
-});
+aiRadios.forEach(radio => radio.addEventListener('change', updateCustomAIField));
 
-recordImageFile.addEventListener('change', () => {
-  const file = recordImageFile.files?.[0];
-  if (!file) return;
+function updateImageMode() {
+  if (compareToggle.checked) {
+    normalImagePanel.classList.add('hidden');
+    compareImagePanel.classList.remove('hidden');
+  } else {
+    normalImagePanel.classList.remove('hidden');
+    compareImagePanel.classList.add('hidden');
+  }
+}
+
+compareToggle.addEventListener('change', updateImageMode);
+
+function validImageUrl(raw) {
+  const value = raw.trim();
+  if (!value) return '';
+  try {
+    const url = new URL(value);
+    if (!/^https?:$/.test(url.protocol)) throw new Error('invalid protocol');
+    return url.href;
+  } catch {
+    alert('이미지 주소는 http 또는 https URL로 입력해주세요.');
+    return '';
+  }
+}
+
+function addUrlImage() {
+  const url = validImageUrl(recordImage.value);
+  if (!url) return;
+  pendingImages.push({ id: ++imageItemSeq, type: 'url', url, preview: url, name: 'URL 이미지' });
+  recordImage.value = '';
+  renderImageQueue();
+}
+
+function setCompareUrl(slot) {
+  const input = slot === 'original' ? originalImageUrl : modifiedImageUrl;
+  const url = validImageUrl(input.value);
+  if (!url) return;
+  setCompareImage(slot, { id: ++imageItemSeq, type: 'url', url, preview: url, name: 'URL 이미지' });
+  input.value = '';
+}
+
+async function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error('이미지 파일을 읽지 못했습니다.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function assertImageFile(file) {
   if (!file.type.startsWith('image/')) {
-    alert('이미지 파일만 선택해주세요.');
+    throw new Error('이미지 파일만 선택해주세요.');
+  }
+}
+
+async function imageItemFromFile(file, fallbackName = '') {
+  assertImageFile(file);
+  return {
+    id: ++imageItemSeq,
+    type: 'file',
+    file,
+    preview: await fileToDataUrl(file),
+    name: file.name || fallbackName || 'image.png'
+  };
+}
+
+async function addFilesToQueue(fileList) {
+  const files = [...fileList];
+  if (files.length === 0) return;
+  try {
+    for (const file of files) {
+      pendingImages.push(await imageItemFromFile(file));
+    }
+    renderImageQueue();
+  } catch (err) {
+    alert(err.message);
+  } finally {
     recordImageFile.value = '';
+  }
+}
+
+async function setCompareFile(slot, fileList) {
+  const file = fileList?.[0];
+  if (!file) return;
+  try {
+    setCompareImage(slot, await imageItemFromFile(file));
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    if (slot === 'original') originalImageFile.value = '';
+    if (slot === 'modified') modifiedImageFile.value = '';
+  }
+}
+
+function setCompareImage(slot, item) {
+  if (slot === 'original') compareOriginal = item;
+  if (slot === 'modified') compareModified = item;
+  renderCompareSlots();
+}
+
+function renderImageQueue() {
+  if (pendingImages.length === 0) {
+    imagePreviewWrap.innerHTML = '';
     return;
   }
 
-  recordImage.value = '';
-  const reader = new FileReader();
-  reader.onload = () => {
-    imagePreview.src = reader.result;
-    imagePreview.classList.remove('hidden');
-  };
-  reader.readAsDataURL(file);
-});
+  imagePreviewWrap.innerHTML = pendingImages.map(item => `
+    <div class="image-thumb">
+      <img src="${escHtml(item.preview)}" alt="${escHtml(item.name)}" />
+      <button type="button" class="remove-image-btn" data-id="${item.id}" aria-label="이미지 제거">×</button>
+    </div>
+  `).join('');
+
+  imagePreviewWrap.querySelectorAll('.remove-image-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = Number(btn.dataset.id);
+      pendingImages = pendingImages.filter(item => item.id !== id);
+      renderImageQueue();
+    });
+  });
+}
+
+function renderCompareSlots() {
+  renderCompareSlot('original', compareOriginal, originalPreview, '원본 없음');
+  renderCompareSlot('modified', compareModified, modifiedPreview, '수정본 없음');
+}
+
+function renderCompareSlot(slot, item, target, emptyText) {
+  if (!item) {
+    target.classList.add('empty');
+    target.innerHTML = emptyText;
+    return;
+  }
+
+  target.classList.remove('empty');
+  target.innerHTML = `
+    <img src="${escHtml(item.preview)}" alt="${slot === 'original' ? '원본' : '수정본'}" />
+    <button type="button" class="remove-image-btn" aria-label="이미지 제거">×</button>
+  `;
+  target.querySelector('.remove-image-btn').addEventListener('click', () => {
+    setCompareImage(slot, null);
+  });
+}
+
+async function readClipboardImageItems() {
+  if (!navigator.clipboard?.read) {
+    throw new Error('이 브라우저에서는 클립보드 이미지 읽기를 지원하지 않습니다. HTTPS 주소에서 다시 시도해주세요.');
+  }
+
+  const clipboardItems = await navigator.clipboard.read();
+  const files = [];
+  for (const item of clipboardItems) {
+    const imageType = item.types.find(type => type.startsWith('image/'));
+    if (!imageType) continue;
+    const blob = await item.getType(imageType);
+    const ext = imageType.split('/')[1]?.replace('jpeg', 'jpg') || 'png';
+    files.push(new File([blob], `clipboard-${Date.now()}-${files.length + 1}.${ext}`, { type: imageType }));
+  }
+
+  if (files.length === 0) {
+    throw new Error('클립보드에 이미지가 없습니다.');
+  }
+
+  return Promise.all(files.map(file => imageItemFromFile(file, file.name)));
+}
+
+async function pasteClipboardImages(target = 'normal') {
+  try {
+    const items = await readClipboardImageItems();
+    if (target === 'original') {
+      setCompareImage('original', items[0]);
+    } else if (target === 'modified') {
+      setCompareImage('modified', items[0]);
+    } else {
+      pendingImages.push(...items);
+      renderImageQueue();
+    }
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+async function resolveImageItem(item) {
+  if (!item) return '';
+  if (item.type === 'url') return item.url;
+  return uploadImageFile(item.file);
+}
+
+async function resolveImageQueue() {
+  const urls = [];
+  for (let i = 0; i < pendingImages.length; i++) {
+    modalSave.textContent = `이미지 업로드 중... (${i + 1}/${pendingImages.length})`;
+    urls.push(await resolveImageItem(pendingImages[i]));
+  }
+  return urls;
+}
+
+addImageUrlBtn.addEventListener('click', addUrlImage);
+recordImage.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addUrlImage(); } });
+recordImageFile.addEventListener('change', () => addFilesToQueue(recordImageFile.files));
+pasteImageBtn.addEventListener('click', () => pasteClipboardImages('normal'));
+addOriginalUrlBtn.addEventListener('click', () => setCompareUrl('original'));
+addModifiedUrlBtn.addEventListener('click', () => setCompareUrl('modified'));
+originalImageUrl.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); setCompareUrl('original'); } });
+modifiedImageUrl.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); setCompareUrl('modified'); } });
+originalImageFile.addEventListener('change', () => setCompareFile('original', originalImageFile.files));
+modifiedImageFile.addEventListener('change', () => setCompareFile('modified', modifiedImageFile.files));
+pasteOriginalBtn.addEventListener('click', () => pasteClipboardImages('original'));
+pasteModifiedBtn.addEventListener('click', () => pasteClipboardImages('modified'));
 
 modalSave.addEventListener('click', async () => {
-  const ai = aiSelect.value === '기타'
-    ? (aiCustom.value.trim() || '기타')
-    : aiSelect.value;
-
+  const ai = selectedAI();
   const title  = recordTitle.value.trim();
   const prompt = recordPrompt.value.trim();
-  let image    = recordImage.value.trim();
-  const imageFile = recordImageFile.files?.[0];
   const memo   = recordMemo.value.trim();
+  const compareEnabled = compareToggle.checked;
 
   if (!ai)     { alert('AI 종류를 선택해주세요.'); return; }
   if (!title)  { alert('제목을 입력해주세요.'); return; }
   if (!prompt) { alert('프롬프트를 입력해주세요.'); return; }
+  if (!compareEnabled && recordImage.value.trim()) {
+    const beforeCount = pendingImages.length;
+    addUrlImage();
+    if (pendingImages.length === beforeCount) return;
+  }
+  if (compareEnabled && !compareOriginal && originalImageUrl.value.trim()) setCompareUrl('original');
+  if (compareEnabled && !compareModified && modifiedImageUrl.value.trim()) setCompareUrl('modified');
+  if (compareEnabled && (!compareOriginal || !compareModified)) {
+    alert('원본과 수정본 이미지를 모두 넣어주세요.');
+    return;
+  }
 
   modalSave.disabled = true;
   modalSave.textContent = '저장 중...';
 
   try {
-    if (imageFile) {
-      modalSave.textContent = '이미지 업로드 중...';
-      image = await uploadImageFile(imageFile);
-      modalSave.textContent = '기록 저장 중...';
+    let images = [];
+    let originalImage = '';
+    let modifiedImage = '';
+
+    if (compareEnabled) {
+      modalSave.textContent = '원본 업로드 중...';
+      originalImage = await resolveImageItem(compareOriginal);
+      modalSave.textContent = '수정본 업로드 중...';
+      modifiedImage = await resolveImageItem(compareModified);
+      images = [originalImage, modifiedImage].filter(Boolean);
+    } else {
+      images = await resolveImageQueue();
     }
-    await saveRecord({ ai, title, prompt, image, memo });
+
+    modalSave.textContent = '기록 저장 중...';
+    await saveRecord({
+      ai,
+      title,
+      prompt,
+      images,
+      image: compareEnabled ? modifiedImage : images[0],
+      compareEnabled,
+      originalImage,
+      modifiedImage,
+      memo
+    });
     closeModal();
     await loadRecords();
   } catch (err) {
@@ -635,14 +954,7 @@ function showDetail(r) {
   $('detail-prompt').textContent = r.prompt;
   $('detail-date').textContent = formatDate(r.createdAt);
   $('detail-issue-link').href = r.url;
-
-  const img = $('detail-image');
-  if (r.image) {
-    img.src = r.image;
-    img.classList.remove('hidden');
-  } else {
-    img.classList.add('hidden');
-  }
+  renderDetailImages(r);
 
   const memoSection = $('detail-memo-section');
   if (r.memo) {
@@ -653,6 +965,31 @@ function showDetail(r) {
   }
 
   detailOverlay.classList.remove('hidden');
+}
+
+function renderDetailImages(r) {
+  const wrap = $('detail-images');
+  const images = recordImages(r);
+
+  if (r.compareEnabled && (r.originalImage || r.modifiedImage)) {
+    wrap.innerHTML = [
+      detailImageHTML(r.originalImage, '원본'),
+      detailImageHTML(r.modifiedImage, '수정본')
+    ].filter(Boolean).join('');
+  } else {
+    wrap.innerHTML = images.map((url, idx) => detailImageHTML(url, `이미지 ${idx + 1}`)).join('');
+  }
+
+  wrap.classList.toggle('hidden', !wrap.innerHTML);
+}
+
+function detailImageHTML(url, caption) {
+  if (!url) return '';
+  return `
+    <div class="detail-image-item">
+      <img src="${escHtml(url)}" alt="${escHtml(caption)}" />
+      <div class="detail-image-caption">${escHtml(caption)}</div>
+    </div>`;
 }
 
 // ──────────────────────────────────────────────
