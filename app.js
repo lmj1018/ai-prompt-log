@@ -1,6 +1,6 @@
 /* ============================================================
    AI Prompt Log — app.js
-   GitHub Pages 정적 사이트 + GitHub OAuth (Device Flow) 방식
+   GitHub Pages 정적 사이트 + GitHub 토큰 연결 방식
    데이터 저장: GitHub Issues API
    ============================================================ */
 
@@ -10,7 +10,6 @@
 const CONFIG = window.SITE_CONFIG || {};
 
 const ACCESS_CODE    = CONFIG.accessCode    || 'dlatldkagh1!'; // 접근 코드 (변경 가능)
-const GITHUB_CLIENT_ID = CONFIG.clientId   || '';             // GitHub OAuth App Client ID
 const REPO_OWNER     = CONFIG.repoOwner    || '';             // GitHub 사용자명
 const REPO_NAME      = CONFIG.repoName     || '';             // 저장소 이름
 const ISSUE_LABEL    = CONFIG.issueLabel   || 'ai-prompt-log'; // Issues 라벨
@@ -112,8 +111,7 @@ shakeStyle.textContent = `
 document.head.appendChild(shakeStyle);
 
 // ──────────────────────────────────────────────
-// 2. GitHub OAuth — Device Flow
-//    (정적 사이트에서 Client Secret 없이 사용 가능)
+// 2. GitHub 토큰 연결
 // ──────────────────────────────────────────────
 function initAuth() {
   // 저장된 토큰 복원
@@ -125,49 +123,17 @@ function initAuth() {
   loadRecords();
 }
 
-loginBtn.addEventListener('click', startDeviceFlow);
+loginBtn.addEventListener('click', openTokenLoginModal);
 logoutBtn.addEventListener('click', logout);
 
-async function startDeviceFlow() {
-  if (!GITHUB_CLIENT_ID) {
-    alert('config.js 에 GitHub OAuth App Client ID를 설정해주세요.\n배포 가이드를 참고하세요.');
-    return;
-  }
-
-  loginBtn.disabled = true;
-  loginBtn.textContent = '인증 요청 중...';
-
-  try {
-    // Device Flow: 코드 요청
-    const res = await fetch('https://github.com/login/device/code', {
-      method: 'POST',
-      headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ client_id: GITHUB_CLIENT_ID, scope: 'repo' })
-    });
-    const data = await res.json();
-
-    if (!data.device_code) throw new Error('Device code 요청 실패');
-
-    // 사용자에게 코드 안내
-    showDeviceCodeModal(data);
-
-    // 폴링 시작
-    pollForToken(data.device_code, data.interval || 5);
-
-  } catch (err) {
-    console.error(err);
-    alert('GitHub 로그인 요청에 실패했습니다. Client ID를 확인해주세요.');
-    resetLoginBtn();
-  }
-}
-
-function showDeviceCodeModal(data) {
-  // 기존 안내 모달 제거
-  const old = document.getElementById('device-modal');
+function openTokenLoginModal() {
+  const old = document.getElementById('token-modal');
   if (old) old.remove();
 
+  const fineTokenUrl = 'https://github.com/settings/personal-access-tokens/new';
+  const classicTokenUrl = 'https://github.com/settings/tokens/new?description=AI%20Prompt%20Log&scopes=repo';
   const div = document.createElement('div');
-  div.id = 'device-modal';
+  div.id = 'token-modal';
   div.style.cssText = `
     position:fixed;inset:0;background:rgba(0,0,0,0.75);
     display:flex;align-items:center;justify-content:center;z-index:9000;
@@ -175,93 +141,86 @@ function showDeviceCodeModal(data) {
   `;
   div.innerHTML = `
     <div style="background:#161b22;border:1px solid #30363d;border-radius:16px;
-                padding:36px 32px;max-width:420px;width:90%;text-align:center;
-                box-shadow:0 8px 40px rgba(0,0,0,0.5);">
-      <div style="font-size:2.5rem;margin-bottom:16px;">🔑</div>
-      <h2 style="font-size:1.2rem;margin-bottom:12px;color:#e6edf3;">GitHub 로그인</h2>
-      <p style="color:#8b949e;font-size:0.9rem;margin-bottom:20px;line-height:1.6;">
-        아래 코드를 복사한 후<br/>GitHub 인증 페이지에서 입력하세요.
+                padding:32px;max-width:480px;width:92%;box-shadow:0 8px 40px rgba(0,0,0,0.5);">
+      <h2 style="font-size:1.2rem;margin-bottom:12px;color:#e6edf3;">GitHub 연결</h2>
+      <p style="color:#8b949e;font-size:0.9rem;margin-bottom:18px;line-height:1.6;">
+        토큰 생성에서 저장소는 <b style="color:#e6edf3;">${REPO_OWNER}/${REPO_NAME}</b>만 선택하고,
+        <b style="color:#e6edf3;">Contents</b>와 <b style="color:#e6edf3;">Issues</b> 권한을 Read and write로 설정하세요.
       </p>
-      <div style="background:#21262d;border:1px solid #30363d;border-radius:10px;
-                  padding:16px;font-size:1.8rem;font-weight:700;letter-spacing:4px;
-                  color:#58a6ff;margin-bottom:20px;font-family:monospace;">
-        ${data.user_code}
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
+        <a href="${fineTokenUrl}" target="_blank"
+           style="display:inline-block;padding:9px 14px;background:#238636;color:#fff;
+                  border-radius:8px;text-decoration:none;font-weight:600;font-size:0.88rem;">
+          Fine-grained 토큰 만들기
+        </a>
+        <a href="${classicTokenUrl}" target="_blank"
+           style="display:inline-block;padding:9px 14px;background:#30363d;color:#e6edf3;
+                  border-radius:8px;text-decoration:none;font-weight:600;font-size:0.88rem;">
+          빠른 토큰 만들기
+        </a>
       </div>
-      <a href="${data.verification_uri}" target="_blank"
-         style="display:inline-block;padding:10px 24px;background:#58a6ff;
-                color:#0d1117;border-radius:10px;text-decoration:none;
-                font-weight:600;font-size:0.95rem;margin-bottom:16px;">
-        GitHub 인증 페이지 열기 →
-      </a>
-      <p style="color:#8b949e;font-size:0.82rem;">
-        페이지에서 코드 입력 후 이 창이 자동으로 닫힙니다.<br/>
-        <span id="poll-status">인증 대기 중...</span>
-      </p>
-      <button onclick="document.getElementById('device-modal').remove();resetLoginBtn();"
-              style="margin-top:16px;background:transparent;border:1px solid #30363d;
-                     color:#8b949e;padding:8px 20px;border-radius:8px;cursor:pointer;
-                     font-size:0.85rem;">취소</button>
+      <input id="token-input" type="password" autocomplete="off"
+             placeholder="github_pat_... 또는 ghp_..."
+             style="width:100%;padding:11px 13px;background:#0d1117;border:1px solid #30363d;
+                    color:#e6edf3;border-radius:8px;font:inherit;margin-bottom:10px;" />
+      <p id="token-msg" style="min-height:20px;color:#f85149;font-size:0.84rem;margin-bottom:14px;"></p>
+      <div style="display:flex;justify-content:flex-end;gap:8px;">
+        <button id="token-cancel" style="background:transparent;border:1px solid #30363d;color:#8b949e;
+                padding:9px 18px;border-radius:8px;cursor:pointer;">취소</button>
+        <button id="token-save" style="background:#58a6ff;border:0;color:#0d1117;
+                padding:9px 18px;border-radius:8px;cursor:pointer;font-weight:700;">연결</button>
+      </div>
     </div>
   `;
   document.body.appendChild(div);
-}
 
-let pollTimer = null;
+  const input = div.querySelector('#token-input');
+  const msg = div.querySelector('#token-msg');
+  const save = div.querySelector('#token-save');
+  const cancel = div.querySelector('#token-cancel');
 
-async function pollForToken(deviceCode, interval) {
-  clearInterval(pollTimer);
-  pollTimer = setInterval(async () => {
-    try {
-      const res = await fetch('https://github.com/login/oauth/access_token', {
-        method: 'POST',
-        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          client_id: GITHUB_CLIENT_ID,
-          device_code: deviceCode,
-          grant_type: 'urn:ietf:params:oauth:grant-type:device_code'
-        })
-      });
-      const data = await res.json();
-
-      if (data.access_token) {
-        clearInterval(pollTimer);
-        accessToken = data.access_token;
-        localStorage.setItem('gh_token', accessToken);
-        const modal = document.getElementById('device-modal');
-        if (modal) modal.remove();
-        await fetchUser();
-        loadRecords();
-      } else if (data.error === 'authorization_pending') {
-        const el = document.getElementById('poll-status');
-        if (el) el.textContent = '인증 대기 중...';
-      } else if (data.error === 'slow_down') {
-        // interval 늘리기
-        clearInterval(pollTimer);
-        pollForToken(deviceCode, interval + 5);
-      } else if (data.error === 'expired_token') {
-        clearInterval(pollTimer);
-        const modal = document.getElementById('device-modal');
-        if (modal) modal.remove();
-        alert('인증 시간이 만료되었습니다. 다시 시도해주세요.');
-        resetLoginBtn();
-      }
-    } catch (e) {
-      console.error('poll error', e);
+  async function submitToken() {
+    const token = input.value.trim();
+    if (!token) {
+      msg.textContent = 'GitHub 토큰을 붙여넣어주세요.';
+      input.focus();
+      return;
     }
-  }, interval * 1000);
+
+    save.disabled = true;
+    save.textContent = '확인 중...';
+    accessToken = token;
+    localStorage.setItem('gh_token', accessToken);
+
+    const ok = await fetchUser();
+    if (!ok) {
+      msg.textContent = '토큰 확인에 실패했습니다. 권한과 만료일을 확인해주세요.';
+      save.disabled = false;
+      save.textContent = '연결';
+      return;
+    }
+
+    div.remove();
+    await loadRecords();
+  }
+
+  save.addEventListener('click', submitToken);
+  cancel.addEventListener('click', () => div.remove());
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') submitToken(); });
+  input.focus();
 }
 
 function resetLoginBtn() {
   loginBtn.disabled = false;
   loginBtn.innerHTML = `
     <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
-    GitHub 로그인`;
+    GitHub 연결`;
 }
 
 async function fetchUser() {
   try {
     const res = await fetch('https://api.github.com/user', {
-      headers: { Authorization: `token ${accessToken}` }
+      headers: { Authorization: `Bearer ${accessToken}` }
     });
     if (!res.ok) throw new Error('토큰 만료');
     currentUser = await res.json();
@@ -270,8 +229,10 @@ async function fetchUser() {
     userAvatar.src = currentUser.avatar_url;
     userName.textContent = currentUser.login;
     addBtn.classList.remove('hidden');
+    return true;
   } catch {
     logout();
+    return false;
   }
 }
 
@@ -336,7 +297,7 @@ async function loadRecords() {
 
   try {
     const headers = { Accept: 'application/vnd.github+json' };
-    if (accessToken) headers.Authorization = `token ${accessToken}`;
+    if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
 
     const res = await fetch(
       `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/issues?labels=${ISSUE_LABEL}&state=open&per_page=100`,
@@ -370,7 +331,7 @@ async function loadRecords() {
 }
 
 async function saveRecord(data) {
-  if (!accessToken) { alert('GitHub 로그인이 필요합니다.'); return false; }
+  if (!accessToken) { alert('GitHub 연결이 필요합니다.'); return false; }
   if (!REPO_OWNER || !REPO_NAME) { alert('config.js 저장소 설정이 필요합니다.'); return false; }
 
   const res = await fetch(
@@ -378,7 +339,7 @@ async function saveRecord(data) {
     {
       method: 'POST',
       headers: {
-        Authorization: `token ${accessToken}`,
+        Authorization: `Bearer ${accessToken}`,
         Accept: 'application/vnd.github+json',
         'Content-Type': 'application/json'
       },
@@ -422,7 +383,7 @@ function fileToBase64(file) {
 }
 
 async function uploadImageFile(file) {
-  if (!accessToken) { throw new Error('GitHub 로그인이 필요합니다.'); }
+  if (!accessToken) { throw new Error('GitHub 연결이 필요합니다.'); }
   if (!file.type.startsWith('image/')) { throw new Error('이미지 파일만 업로드할 수 있습니다.'); }
   if (file.size > 10 * 1024 * 1024) { throw new Error('이미지는 10MB 이하만 업로드해주세요.'); }
 
@@ -436,7 +397,7 @@ async function uploadImageFile(file) {
     {
       method: 'PUT',
       headers: {
-        Authorization: `token ${accessToken}`,
+        Authorization: `Bearer ${accessToken}`,
         Accept: 'application/vnd.github+json',
         'Content-Type': 'application/json'
       },
@@ -472,7 +433,7 @@ function renderGallery() {
     emptyMsg.classList.remove('hidden');
     emptyMsg.querySelector('p').innerHTML =
       allRecords.length === 0
-        ? '아직 기록이 없습니다.<br/>GitHub 로그인 후 첫 번째 기록을 추가해보세요!'
+        ? '아직 기록이 없습니다.<br/>GitHub 연결 후 첫 번째 기록을 추가해보세요!'
         : `<b>${currentFilter}</b> 기록이 없습니다.`;
     gallery.innerHTML = '';
     return;
