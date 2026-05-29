@@ -170,6 +170,23 @@ header {
 
 .btn-ghost:hover { color: var(--text); border-color: var(--text2); }
 
+.btn-danger {
+  padding: 8px 14px;
+  background: transparent;
+  color: var(--red);
+  border: 1px solid rgba(248,81,73,0.45);
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s, background 0.2s;
+}
+
+.btn-danger:hover {
+  color: #fff;
+  border-color: var(--red);
+  background: rgba(248,81,73,0.14);
+}
+
 .btn-small {
   padding: 10px 14px;
   background: var(--bg3);
@@ -742,6 +759,25 @@ main {
 
 .detail-section { margin-bottom: 16px; }
 
+.detail-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: -4px 0 14px;
+}
+
+.detail-status {
+  min-height: 20px;
+  margin: -8px 0 12px;
+  color: var(--text2);
+  font-size: 0.82rem;
+}
+
+.detail-status.ok { color: var(--green); }
+.detail-status.warn { color: var(--orange); }
+.detail-status.error { color: var(--red); }
+
 .detail-label {
   font-size: 0.8rem;
   font-weight: 600;
@@ -787,6 +823,7 @@ main {
   .filter-inner { padding: 0 16px; }
   .compare-input-grid { grid-template-columns: 1fr; }
   .image-url-row { flex-direction: column; }
+  .detail-actions > button { flex: 1 1 30%; }
 }
 
 /* ===== 스크롤바 ===== */

@@ -71,7 +71,7 @@
   <div id="modal-overlay" class="hidden">
     <div class="modal">
       <div class="modal-header">
-        <h2>새 AI 기록 추가</h2>
+        <h2 id="modal-title">새 AI 기록 추가</h2>
         <button id="modal-close" class="btn-icon">✕</button>
       </div>
       <div class="modal-body">
@@ -173,6 +173,12 @@
           <div class="detail-label">프롬프트</div>
           <pre id="detail-prompt" class="detail-pre"></pre>
         </div>
+        <div class="detail-actions">
+          <button type="button" id="copy-prompt-btn" class="btn-ghost">프롬프트 복사</button>
+          <button type="button" id="edit-record-btn" class="btn-ghost">수정</button>
+          <button type="button" id="delete-record-btn" class="btn-danger">삭제</button>
+        </div>
+        <p id="detail-status" class="detail-status"></p>
         <div class="detail-section" id="detail-memo-section">
           <div class="detail-label">메모</div>
           <p id="detail-memo"></p>

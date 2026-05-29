@@ -46,6 +46,7 @@ const loadingMsg     = $('loading');
 const emptyMsg       = $('empty-msg');
 
 const modalOverlay   = $('modal-overlay');
+const modalTitle     = $('modal-title');
 const modalClose     = $('modal-close');
 const modalCancel    = $('modal-cancel');
 const modalSave      = $('modal-save');
@@ -77,12 +78,18 @@ const recordMemo     = $('record-memo');
 
 const detailOverlay  = $('detail-overlay');
 const detailClose    = $('detail-close');
+const copyPromptBtn  = $('copy-prompt-btn');
+const editRecordBtn  = $('edit-record-btn');
+const deleteRecordBtn = $('delete-record-btn');
+const detailStatus   = $('detail-status');
 
 let imageItemSeq = 0;
 let pendingImages = [];
 let compareOriginal = null;
 let compareModified = null;
 let lastPasteTarget = 'normal';
+let editingRecord = null;
+let currentDetailRecord = null;
 
 // ──────────────────────────────────────────────
 // 1. 잠금 화면
@@ -389,9 +396,11 @@ async function loadRecords() {
       const parsed = parseIssueBody(issue.body || '');
       return {
         id:        issue.number,
+        nodeId:    issue.node_id,
         title:     issue.title,
         url:       issue.html_url,
         createdAt: issue.created_at,
+        updatedAt: issue.updated_at,
         ...parsed
       };
     });
@@ -429,6 +438,97 @@ async function saveRecord(data) {
     const err = await res.json();
     throw new Error(err.message || '저장 실패');
   }
+  return true;
+}
+
+async function updateRecord(issueNumber, data) {
+  if (!accessToken) { alert('GitHub 연결이 필요합니다.'); return false; }
+  if (!REPO_OWNER || !REPO_NAME) { alert('config.js 저장소 설정이 필요합니다.'); return false; }
+
+  const res = await fetch(
+    `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/issues/${issueNumber}`,
+    {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: 'application/vnd.github+json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        title: data.title,
+        body: buildIssueBody(data)
+      })
+    }
+  );
+
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.message || '수정 실패');
+  }
+  return true;
+}
+
+async function closeRecord(issueNumber) {
+  if (!accessToken) { alert('GitHub 연결이 필요합니다.'); return false; }
+  if (!REPO_OWNER || !REPO_NAME) { alert('config.js 저장소 설정이 필요합니다.'); return false; }
+
+  const res = await fetch(
+    `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/issues/${issueNumber}`,
+    {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: 'application/vnd.github+json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ state: 'closed' })
+    }
+  );
+
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.message || '삭제 실패');
+  }
+  return true;
+}
+
+async function deleteRecordGraphQL(nodeId) {
+  if (!nodeId) return false;
+
+  const res = await fetch('https://api.github.com/graphql', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      Accept: 'application/vnd.github+json',
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      query: `mutation DeletePromptLogIssue($id: ID!) {
+        deleteIssue(input: { issueId: $id }) {
+          clientMutationId
+        }
+      }`,
+      variables: { id: nodeId }
+    })
+  });
+
+  let result = {};
+  try {
+    result = await res.json();
+  } catch {
+    return false;
+  }
+  if (!res.ok || result.errors?.length) return false;
+  return true;
+}
+
+async function deleteRecord(record) {
+  if (!accessToken) { alert('GitHub 연결이 필요합니다.'); return false; }
+
+  const deleted = await deleteRecordGraphQL(record.nodeId);
+  if (deleted) return true;
+
+  await closeRecord(record.id);
   return true;
 }
 
@@ -628,19 +728,33 @@ document.querySelectorAll('.filter-btn').forEach(btn => {
 // ──────────────────────────────────────────────
 // 6. 새 기록 모달
 // ──────────────────────────────────────────────
-addBtn.addEventListener('click', openModal);
+addBtn.addEventListener('click', () => openModal());
 modalClose.addEventListener('click', closeModal);
 modalCancel.addEventListener('click', closeModal);
 modalOverlay.addEventListener('click', e => { if (e.target === modalOverlay) closeModal(); });
 
-function openModal() {
+function openModal(record = null) {
+  resetModalForm();
+  if (record) {
+    editingRecord = record;
+    modalTitle.textContent = 'AI 기록 수정';
+    modalSave.textContent = '수정 저장';
+    fillRecordForm(record);
+  }
   modalOverlay.classList.remove('hidden');
   recordTitle.focus();
 }
 
 function closeModal() {
   modalOverlay.classList.add('hidden');
-  // 폼 초기화
+  resetModalForm();
+}
+
+function resetModalForm() {
+  editingRecord = null;
+  modalTitle.textContent = '새 AI 기록 추가';
+  modalSave.disabled = false;
+  modalSave.textContent = 'GitHub에 저장';
   resetAISelection();
   aiCustom.value = '';
   aiCustom.classList.add('hidden');
@@ -663,8 +777,41 @@ function closeModal() {
   recordMemo.value = '';
 }
 
+function fillRecordForm(record) {
+  setSelectedAI(record.ai);
+  recordTitle.value = record.title || '';
+  recordPrompt.value = record.prompt || '';
+  recordMemo.value = record.memo || '';
+  compareToggle.checked = !!record.compareEnabled;
+
+  if (compareToggle.checked) {
+    compareOriginal = record.originalImage ? urlImageItem(record.originalImage, '기존 원본') : null;
+    compareModified = record.modifiedImage ? urlImageItem(record.modifiedImage, '기존 수정본') : null;
+  } else {
+    pendingImages = recordImages(record).map((url, idx) => urlImageItem(url, `기존 이미지 ${idx + 1}`));
+  }
+
+  updateImageMode();
+  renderImageQueue();
+  renderCompareSlots();
+}
+
 function resetAISelection() {
   aiRadios.forEach(radio => { radio.checked = false; });
+}
+
+function setSelectedAI(ai = '') {
+  resetAISelection();
+  aiCustom.value = '';
+
+  const radios = [...aiRadios];
+  const exact = radios.find(radio => radio.value === ai);
+  const fallback = radios.find(radio => radio.value === '기타');
+  const target = exact || (ai ? fallback : null);
+
+  if (target) target.checked = true;
+  if (!exact && ai && fallback) aiCustom.value = ai;
+  updateCustomAIField(false);
 }
 
 function selectedAI() {
@@ -675,11 +822,11 @@ function selectedAI() {
     : checked.value;
 }
 
-function updateCustomAIField() {
+function updateCustomAIField(shouldFocus = true) {
   const checked = [...aiRadios].find(radio => radio.checked);
   if (checked?.value === '기타') {
     aiCustom.classList.remove('hidden');
-    aiCustom.focus();
+    if (shouldFocus) aiCustom.focus();
   } else {
     aiCustom.classList.add('hidden');
   }
@@ -1082,6 +1229,7 @@ modalSave.addEventListener('click', async () => {
     return;
   }
 
+  const wasEditing = !!editingRecord;
   modalSave.disabled = true;
   modalSave.textContent = '저장 중...';
 
@@ -1100,8 +1248,7 @@ modalSave.addEventListener('click', async () => {
       images = await resolveImageQueue();
     }
 
-    modalSave.textContent = '기록 저장 중...';
-    await saveRecord({
+    const recordData = {
       ai,
       title,
       prompt,
@@ -1111,24 +1258,49 @@ modalSave.addEventListener('click', async () => {
       originalImage,
       modifiedImage,
       memo
-    });
+    };
+
+    modalSave.textContent = wasEditing ? '기록 수정 중...' : '기록 저장 중...';
+    const ok = wasEditing
+      ? await updateRecord(editingRecord.id, recordData)
+      : await saveRecord(recordData);
+    if (!ok) return;
+
     closeModal();
+    detailOverlay.classList.add('hidden');
+    currentDetailRecord = null;
     await loadRecords();
   } catch (err) {
-    alert(`저장 실패: ${err.message}`);
+    alert(`${wasEditing ? '수정' : '저장'} 실패: ${err.message}`);
   } finally {
     modalSave.disabled = false;
-    modalSave.textContent = 'GitHub에 저장';
+    modalSave.textContent = wasEditing ? '수정 저장' : 'GitHub에 저장';
   }
 });
 
 // ──────────────────────────────────────────────
 // 7. 상세 보기 모달
 // ──────────────────────────────────────────────
-detailClose.addEventListener('click', () => detailOverlay.classList.add('hidden'));
-detailOverlay.addEventListener('click', e => { if (e.target === detailOverlay) detailOverlay.classList.add('hidden'); });
+detailClose.addEventListener('click', closeDetail);
+detailOverlay.addEventListener('click', e => { if (e.target === detailOverlay) closeDetail(); });
+copyPromptBtn.addEventListener('click', copyCurrentPrompt);
+editRecordBtn.addEventListener('click', editCurrentRecord);
+deleteRecordBtn.addEventListener('click', deleteCurrentRecord);
+
+function closeDetail() {
+  detailOverlay.classList.add('hidden');
+  currentDetailRecord = null;
+  setDetailStatus('');
+}
+
+function setDetailStatus(message, tone = '') {
+  detailStatus.textContent = message || '';
+  detailStatus.className = `detail-status${tone ? ` ${tone}` : ''}`;
+}
 
 function showDetail(r) {
+  currentDetailRecord = r;
+  setDetailStatus('');
   $('detail-title').textContent = r.title;
   $('detail-ai-badge').innerHTML = `<span class="ai-badge ${aiBadgeClass(r.ai)}">${escHtml(r.ai)}</span>`;
   $('detail-prompt').textContent = r.prompt;
@@ -1145,6 +1317,95 @@ function showDetail(r) {
   }
 
   detailOverlay.classList.remove('hidden');
+}
+
+async function copyTextToClipboard(text) {
+  if (!text) throw new Error('복사할 프롬프트가 없습니다.');
+
+  if (navigator.clipboard?.writeText && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // Fallback below is useful on Samsung Internet and older mobile browsers.
+    }
+  }
+
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'fixed';
+  textarea.style.top = '0';
+  textarea.style.left = '0';
+  textarea.style.width = '1px';
+  textarea.style.height = '1px';
+  textarea.style.opacity = '0';
+  textarea.style.pointerEvents = 'none';
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  textarea.setSelectionRange(0, textarea.value.length);
+
+  try {
+    const ok = document.execCommand('copy');
+    if (!ok) throw new Error('복사 명령이 차단되었습니다.');
+    return true;
+  } finally {
+    textarea.remove();
+  }
+}
+
+async function copyCurrentPrompt() {
+  if (!currentDetailRecord) return;
+  copyPromptBtn.disabled = true;
+  setDetailStatus('프롬프트를 복사하는 중입니다...');
+
+  try {
+    await copyTextToClipboard(currentDetailRecord.prompt);
+    setDetailStatus('프롬프트를 클립보드에 복사했습니다.', 'ok');
+  } catch (err) {
+    setDetailStatus('자동 복사가 막혔습니다. 뜨는 창에서 길게 눌러 복사해주세요.', 'warn');
+    window.prompt('프롬프트 복사', currentDetailRecord.prompt);
+  } finally {
+    copyPromptBtn.disabled = false;
+  }
+}
+
+function editCurrentRecord() {
+  if (!currentDetailRecord) return;
+  if (!accessToken) {
+    alert('수정하려면 GitHub 연결이 필요합니다.');
+    return;
+  }
+  const record = currentDetailRecord;
+  closeDetail();
+  openModal(record);
+}
+
+async function deleteCurrentRecord() {
+  if (!currentDetailRecord) return;
+  if (!accessToken) {
+    alert('삭제하려면 GitHub 연결이 필요합니다.');
+    return;
+  }
+  if (!confirm('이 기록을 삭제할까요? 삭제 권한이 막혀 있으면 GitHub Issue를 닫아서 앱 목록에서 사라지게 합니다.')) {
+    return;
+  }
+
+  const record = currentDetailRecord;
+  deleteRecordBtn.disabled = true;
+  setDetailStatus('기록을 삭제하는 중입니다...');
+
+  try {
+    await deleteRecord(record);
+    setDetailStatus('삭제했습니다.', 'ok');
+    closeDetail();
+    await loadRecords();
+  } catch (err) {
+    setDetailStatus(`삭제 실패: ${err.message}`, 'error');
+  } finally {
+    deleteRecordBtn.disabled = false;
+  }
 }
 
 function renderDetailImages(r) {
@@ -1177,8 +1438,8 @@ function detailImageHTML(url, caption) {
 // ──────────────────────────────────────────────
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
-    detailOverlay.classList.add('hidden');
-    modalOverlay.classList.add('hidden');
+    closeDetail();
+    closeModal();
   }
 });
 
