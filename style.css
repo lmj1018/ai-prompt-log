@@ -486,15 +486,24 @@ main {
   flex-wrap: wrap;
 }
 
-.ai-radio {
+.modal-body .ai-radio {
+  display: inline-flex;
+  align-items: center;
   margin: 0 !important;
   color: var(--text) !important;
   cursor: pointer;
 }
 
-.ai-radio input { position: absolute; opacity: 0; pointer-events: none; }
+.modal-body .ai-radio input[type="radio"] {
+  display: none !important;
+  width: auto !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+}
 
-.ai-radio span {
+.modal-body .ai-radio span {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -509,15 +518,15 @@ main {
   transition: border-color 0.2s, color 0.2s, background 0.2s;
 }
 
-.ai-radio input:checked + span {
+.modal-body .ai-radio input[type="radio"]:checked + span {
   border-color: var(--accent);
   background: rgba(88,166,255,0.12);
   color: var(--accent);
   font-weight: 700;
 }
 
-.compare-toggle {
-  display: flex;
+.modal-body .compare-toggle {
+  display: inline-flex;
   align-items: center;
   gap: 9px;
   width: fit-content;
@@ -526,9 +535,17 @@ main {
   cursor: pointer;
 }
 
-.compare-toggle input {
-  width: auto;
+.modal-body .compare-toggle input[type="checkbox"] {
+  width: 16px !important;
+  height: 16px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  flex: 0 0 auto;
   accent-color: var(--accent);
+}
+
+.modal-body .compare-toggle span {
+  line-height: 1;
 }
 
 .image-panel {
@@ -661,6 +678,17 @@ main {
 .image-status.error { color: var(--red); }
 
 #image-preview-wrap { min-height: 0; }
+
+.paste-catcher {
+  position: fixed;
+  left: -10000px;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
 
 .modal-footer {
   display: flex;

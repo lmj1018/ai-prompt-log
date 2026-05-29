@@ -71,6 +71,7 @@ const pasteOriginalBtn = $('paste-original-btn');
 const pasteModifiedBtn = $('paste-modified-btn');
 const originalPreview = $('original-preview');
 const modifiedPreview = $('modified-preview');
+const pasteCatcher = $('paste-catcher');
 const imageStatus   = $('image-status');
 const recordMemo     = $('record-memo');
 
@@ -875,10 +876,28 @@ function imageUrlsFromHTML(html) {
   }
 }
 
-async function clipboardFileToItem(blob, index = 1) {
+function imageDataUrlsFromHTML(html) {
+  if (!html) return [];
+  try {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    return [...doc.querySelectorAll('img[src]')]
+      .map(img => img.getAttribute('src') || '')
+      .filter(src => src.startsWith('data:image/'));
+  } catch {
+    return [];
+  }
+}
+
+async function dataUrlToTempFileItem(dataUrl, index = 1) {
+  const res = await fetch(dataUrl);
+  const blob = await res.blob();
+  return clipboardBlobToTempFileItem(blob, index);
+}
+
+async function clipboardBlobToTempFileItem(blob, index = 1) {
   const type = blob.type || 'image/png';
   const ext = type.split('/')[1]?.replace('jpeg', 'jpg') || 'png';
-  const file = new File([blob], `clipboard-${Date.now()}-${index}.${ext}`, { type });
+  const file = new File([blob], `clipboard-temp-${Date.now()}-${index}.${ext}`, { type });
   return imageItemFromFile(file, file.name);
 }
 
@@ -892,7 +911,7 @@ async function readClipboardImageItems() {
         const imageType = item.types.find(type => type.startsWith('image/'));
         if (imageType) {
           const blob = await item.getType(imageType);
-          found.push(await clipboardFileToItem(blob, found.length + 1));
+          found.push(await clipboardBlobToTempFileItem(blob, found.length + 1));
           continue;
         }
 
@@ -927,19 +946,43 @@ async function readClipboardImageItems() {
   return found;
 }
 
+function focusPasteCatcher(target = 'normal') {
+  lastPasteTarget = target;
+  pasteCatcher.innerHTML = '';
+  pasteCatcher.focus({ preventScroll: true });
+}
+
 async function itemsFromPasteEvent(data) {
   const found = [];
-  const files = [...(data.files || [])].filter(file =>
-    file.type.startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp)$/i.test(file.name || '')
-  );
+  const itemFiles = [...(data.items || [])]
+    .filter(item => item.kind === 'file' && item.type.startsWith('image/'))
+    .map(item => item.getAsFile())
+    .filter(Boolean);
+  const seenFiles = new Set();
+  const files = [...itemFiles, ...(data.files || [])]
+    .filter(file => file.type.startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp)$/i.test(file.name || ''))
+    .filter(file => {
+      const key = `${file.name}|${file.size}|${file.type}`;
+      if (seenFiles.has(key)) return false;
+      seenFiles.add(key);
+      return true;
+    });
 
-  for (const file of files) {
-    found.push(await imageItemFromFile(file));
+  for (let i = 0; i < files.length; i++) {
+    found.push(await clipboardBlobToTempFileItem(files[i], i + 1));
   }
 
   if (found.length > 0) return found;
 
-  found.push(...imageUrlsFromHTML(data.getData('text/html')).map(url => urlImageItem(url, '붙여넣은 이미지 URL')));
+  const html = data.getData('text/html');
+  const dataUrls = imageDataUrlsFromHTML(html);
+  for (const dataUrl of dataUrls) {
+    found.push(await dataUrlToTempFileItem(dataUrl, found.length + 1));
+  }
+
+  if (found.length > 0) return found;
+
+  found.push(...imageUrlsFromHTML(html).map(url => urlImageItem(url, '붙여넣은 이미지 URL')));
   found.push(...imageUrlsFromText(data.getData('text/plain')).map(url => urlImageItem(url, '붙여넣은 URL')));
   return found;
 }
@@ -957,14 +1000,15 @@ function applyClipboardItems(items, target = 'normal') {
 
 async function pasteClipboardImages(target = 'normal') {
   lastPasteTarget = target;
-  setImageStatus('클립보드를 확인하는 중입니다...', '');
+  focusPasteCatcher(target);
+  setImageStatus('클립보드 이미지를 확인하는 중입니다...', '');
 
   try {
     const items = await readClipboardImageItems();
     applyClipboardItems(items, target);
     setImageStatus(`클립보드에서 이미지 ${items.length}개를 추가했습니다.`, 'ok');
   } catch (err) {
-    setImageStatus(`${err.message} 버튼으로 안 들어오면 지금 Ctrl+V를 눌러주세요.`, 'warn');
+    setImageStatus(`${err.message} 지금 Ctrl+V를 누르면 임시 파일로 받아서 추가합니다.`, 'warn');
   }
 }
 
@@ -976,7 +1020,8 @@ document.addEventListener('paste', async e => {
     if (items.length === 0) return;
     e.preventDefault();
     applyClipboardItems(items, lastPasteTarget);
-    setImageStatus(`붙여넣기로 이미지 ${items.length}개를 추가했습니다.`, 'ok');
+    setImageStatus(`클립보드 이미지를 임시 파일로 받아 ${items.length}개 추가했습니다.`, 'ok');
+    pasteCatcher.innerHTML = '';
   } catch (err) {
     setImageStatus(err.message, 'error');
   }
@@ -1006,8 +1051,8 @@ addOriginalUrlBtn.addEventListener('click', () => setCompareUrl('original'));
 addModifiedUrlBtn.addEventListener('click', () => setCompareUrl('modified'));
 originalImageUrl.addEventListener('focus', () => { lastPasteTarget = 'original'; });
 modifiedImageUrl.addEventListener('focus', () => { lastPasteTarget = 'modified'; });
-originalPreview.addEventListener('click', () => { lastPasteTarget = 'original'; });
-modifiedPreview.addEventListener('click', () => { lastPasteTarget = 'modified'; });
+originalPreview.addEventListener('click', () => focusPasteCatcher('original'));
+modifiedPreview.addEventListener('click', () => focusPasteCatcher('modified'));
 originalImageUrl.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); setCompareUrl('original'); } });
 modifiedImageUrl.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); setCompareUrl('modified'); } });
 originalImageFile.addEventListener('change', () => setCompareFile('original', originalImageFile.files));
